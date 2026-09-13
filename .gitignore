@@ -1,0 +1,48 @@
+# Environment variables
+.env
+.env.*
+!.env.example
+*.env
+
+# Dependencies & Build
+node_modules/
+dist/
+dist-ssr/
+build/
+*.local
+
+# Python cache & virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Logs & Audit
+logs/
+*.log
+backend-audit.*
+frontend-audit.*
+
+# IDEs & System files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Agent & AI tool cache
+.aider-desk/
+.agents/
+skills-lock.json
