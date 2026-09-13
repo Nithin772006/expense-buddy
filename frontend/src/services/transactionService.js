@@ -5,6 +5,7 @@
  */
 
 import { supabase } from '../lib/supabaseClient';
+import { triggerRecurringDetection } from './api';
 
 /**
  * Fetch all transactions for the current user from Supabase.
@@ -67,6 +68,14 @@ export async function saveTransactionToSupabase(tx) {
     console.error('saveTransactionToSupabase error:', error);
     throw error;
   }
+
+  // Trigger recurring payment detection sync in the background
+  try {
+    triggerRecurringDetection().catch(() => {});
+  } catch (e) {
+    // Non-blocking background sync
+  }
+
   return data;
 }
 

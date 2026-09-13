@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import AddExpense from './pages/AddExpense';
 import SpendingAnalysis from './pages/SpendingAnalysis';
 import Forecast from './pages/Forecast';
+import RecurringPayments from './pages/RecurringPayments';
 import Settings from './pages/Settings';
 import ImportTransactions from './pages/ImportTransactions';
 import Login from './pages/Login';
@@ -37,6 +38,7 @@ export default function App() {
                     <Route path="/import-transactions" element={<ImportTransactions />} />
                     <Route path="/spending-analysis"  element={<SpendingAnalysis />} />
                     <Route path="/forecast"           element={<Forecast />} />
+                    <Route path="/recurring-payments" element={<RecurringPayments />} />
                     <Route path="/settings"           element={<Settings />} />
                   </Routes>
                 </main>

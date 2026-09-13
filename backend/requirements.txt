@@ -13,3 +13,4 @@ supabase
 python-dotenv
 python-dateutil
 chardet
+groq>=0.11.0

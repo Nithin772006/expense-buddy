@@ -30,11 +30,12 @@ export default function SpendingAnalysis() {
   const clusterInfo = clusterId !== null ? CLUSTER_LABELS[clusterId] : null;
   const clusterColor = clusterId !== null ? CLUSTER_COLORS[clusterId] || 'purple' : 'purple';
 
-  const totalAmount = storedTxs.reduce((s, t) => s + (t.amount || 0), 0);
-  const avgAmount = storedTxs.length > 0 ? totalAmount / storedTxs.length : 0;
+  const debitTxs = storedTxs.filter((t) => (t.transaction_type || 'debit').toLowerCase() === 'debit');
+  const totalAmount = debitTxs.reduce((s, t) => s + (t.amount || 0), 0);
+  const avgAmount = debitTxs.length > 0 ? totalAmount / debitTxs.length : 0;
   
   const catCounts = {};
-  storedTxs.forEach((t) => {
+  debitTxs.forEach((t) => {
     const c = t.category || 'Uncategorized';
     catCounts[c] = (catCounts[c] || 0) + t.amount;
   });
@@ -42,8 +43,8 @@ export default function SpendingAnalysis() {
   const topCategory = sortedCategories[0];
   const secondCategory = sortedCategories[1];
 
-  const anomalyCount = storedTxs.filter((t) => t.is_anomaly).length;
-  const hasData = storedTxs.length > 0;
+  const anomalyCount = debitTxs.filter((t) => t.is_anomaly).length;
+  const hasData = debitTxs.length > 0;
 
   if (loading) {
     return (
@@ -106,7 +107,7 @@ export default function SpendingAnalysis() {
           <p style={{ margin: '0.25rem 0 0 0', fontSize: '1.2rem', fontWeight: 700, color: '#f8fafc' }}>
             {formatCurrency(totalAmount)}
           </p>
-          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{storedTxs.length} transactions</span>
+          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{debitTxs.length} expense transactions</span>
         </Card>
         <Card style={{ padding: '1rem' }}>
           <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Average Transaction</span>

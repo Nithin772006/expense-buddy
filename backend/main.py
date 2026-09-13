@@ -13,6 +13,7 @@ from schemas.request_models import (
 from services import classification_service, anomaly_service, clustering_service, forecasting_service
 from routers.import_router import router as import_router
 from routers.ml_router import router as ml_router
+from routers.recurring_router import router as recurring_router
 
 load_dotenv()
 
@@ -43,6 +44,7 @@ app.add_middleware(
 # Register routers
 app.include_router(import_router)
 app.include_router(ml_router)
+app.include_router(recurring_router)
 
 @app.get("/")
 def read_root():

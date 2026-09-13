@@ -36,5 +36,49 @@ export const processUserMl = (force = false) =>
 export const getUserMlProfile = () =>
   api.get('/ml/profile');
 
+export const getUserForecast = () =>
+  api.get('/ml/forecast');
+
+export const getUserForecastReasoning = () =>
+  api.get('/ml/forecast/reasoning');
+
+// ── Smart Recurring Payments Endpoints ──
+export const getRecurringPayments = () =>
+  api.get('/recurring-payments');
+
+export const getRecurringSummary = () =>
+  api.get('/recurring-payments/summary');
+
+export const getUpcomingRecurringPayments = () =>
+  api.get('/recurring-payments/upcoming');
+
+export const getDueRecurringPayments = () =>
+  api.get('/recurring-payments/due');
+
+export const getOverdueRecurringPayments = () =>
+  api.get('/recurring-payments/overdue');
+
+export const getPaymentCycleHistory = (paymentId) =>
+  api.get(`/recurring-payments/${paymentId}/history`);
+
+export const triggerRecurringDetection = () =>
+  api.post('/recurring-payments/detect');
+
+export const confirmRecurringPayment = (paymentId) =>
+  api.post(`/recurring-payments/${paymentId}/confirm`);
+
+export const dismissRecurringPayment = (paymentId) =>
+  api.post(`/recurring-payments/${paymentId}/dismiss`);
+
+export const pauseRecurringPayment = (paymentId) =>
+  api.post(`/recurring-payments/${paymentId}/pause`);
+
+export const resumeRecurringPayment = (paymentId) =>
+  api.post(`/recurring-payments/${paymentId}/resume`);
+
+export const markRecurringPaymentPaid = (paymentId, payload) =>
+  api.post(`/recurring-payments/${paymentId}/mark-paid`, payload);
+
 export default api;
+
 

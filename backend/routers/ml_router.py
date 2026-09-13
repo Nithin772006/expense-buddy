@@ -90,3 +90,57 @@ async def get_user_ml_profile(
             status_code=500,
             detail=f"Failed to retrieve user ML profile: {str(e)}"
         )
+
+
+@router.get("/forecast")
+async def get_user_forecast(
+    user_id: str = Depends(get_current_user_id),
+    authorization: Optional[str] = Header(None),
+):
+    """
+    Retrieve Stage A Hybrid Forecast & Stage B Groq Financial Reasoning for the authenticated user.
+    Uses authenticated user's debit transactions from Supabase.
+    Returns calibrated ML prediction, statistical baseline, reliability rating,
+    confidence score (0-100), trend, confirmed vs possible recurring signals, and AI reasoning.
+    """
+    token = authorization.split("Bearer ")[1].strip() if authorization else None
+    try:
+        from services import forecast_service
+        forecast_data = forecast_service.get_user_hybrid_forecast(user_id=user_id, token=token)
+        return {"forecast": forecast_data}
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate expense forecast: {str(e)}"
+        )
+
+
+@router.get("/forecast/reasoning")
+async def get_user_forecast_reasoning(
+    user_id: str = Depends(get_current_user_id),
+    authorization: Optional[str] = Header(None),
+):
+    """
+    Retrieve specifically the Stage B Groq AI Financial Reasoning for the authenticated user.
+    """
+    token = authorization.split("Bearer ")[1].strip() if authorization else None
+    try:
+        from services import forecast_service
+        forecast_data = forecast_service.get_user_hybrid_forecast(user_id=user_id, token=token)
+        return {
+            "ai_reasoning": forecast_data.get("ai_reasoning", {}),
+            "forecast_summary": {
+                "ml_prediction": forecast_data.get("ml_prediction"),
+                "statistical_baseline": forecast_data.get("statistical_baseline"),
+                "fallback_prediction": forecast_data.get("fallback_prediction"),
+                "reliability": forecast_data.get("reliability"),
+                "confidence": forecast_data.get("confidence"),
+                "trend": forecast_data.get("trend"),
+            }
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate forecast reasoning: {str(e)}"
+        )
+

@@ -10,6 +10,7 @@ import {
   Upload,
   User,
   LogOut,
+  CalendarClock,
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { purgeAllLocalTransactionCaches } from '../utils/storage';
@@ -20,6 +21,7 @@ const navItems = [
   { to: '/import-transactions', icon: Upload,           label: 'Import Transactions' },
   { to: '/spending-analysis',   icon: BarChart3,        label: 'Spending Analysis' },
   { to: '/forecast',            icon: TrendingUp,       label: 'Forecast' },
+  { to: '/recurring-payments',  icon: CalendarClock,    label: 'Recurring Payments' },
   { to: '/settings',            icon: Settings,         label: 'Settings' },
 ];
 

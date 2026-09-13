@@ -197,74 +197,13 @@ def compute_user_spending_cluster(transactions: list[dict]) -> Optional[dict]:
 
 # ── 4. Expense Forecasting Helper ────────────────────────────────────────────
 
-def compute_user_expense_forecast(transactions: list[dict]) -> Optional[dict]:
+def compute_user_expense_forecast(transactions: list[dict]) -> dict:
     """
-    Generate an expense forecast from the user's historical transactions.
-    Requires at least 3 transactions to construct lag & rolling features.
+    Generate the Stage A hybrid expense forecast from the user's transactions.
     """
-    if len(transactions) < 3:
-        return {
-            "available": False,
-            "forecasted_amount": None,
-            "reason": "Insufficient transaction history. At least 3 transactions required for AI forecasting.",
-        }
+    from services import forecast_service
+    return forecast_service.generate_hybrid_forecast_from_transactions(transactions)
 
-    # Sort transactions chronologically
-    def parse_tx_date(t):
-        d_str = t.get("transaction_date") or t.get("created_at") or "2000-01-01"
-        return str(d_str)[:10]
-
-    sorted_txs = sorted(transactions, key=parse_tx_date)
-    amounts = [float(t.get("amount") or 0.0) for t in sorted_txs]
-    n = len(amounts)
-
-    lag_1 = amounts[-1]
-    lag_2 = amounts[-2]
-    last_3 = amounts[-3:]
-    rolling_3 = float(np.mean(last_3))
-    hist_avg = float(np.mean(amounts))
-    prev_std = float(np.std(amounts)) if n > 1 else 0.0
-
-    # Calculate days since previous expense
-    try:
-        d1 = datetime.strptime(parse_tx_date(sorted_txs[-1]), "%Y-%m-%d")
-        d2 = datetime.strptime(parse_tx_date(sorted_txs[-2]), "%Y-%m-%d")
-        days_since = max(0, (d1 - d2).days)
-    except Exception:
-        days_since = 1
-
-    now = datetime.now()
-    day_of_week = now.weekday()
-    day_of_month = now.day
-
-    forecast_features = {
-        "lag_1": round(lag_1, 2),
-        "lag_2": round(lag_2, 2),
-        "rolling_3_mean": round(rolling_3, 2),
-        "historical_avg_spending": round(hist_avg, 2),
-        "previous_transaction_count": int(n - 1),
-        "days_since_previous_expense": int(days_since),
-        "previous_std": round(prev_std, 2),
-        "day_of_week": int(day_of_week),
-        "day_of_month": int(day_of_month),
-    }
-
-    try:
-        forecast_res = forecasting_service.predict(forecast_features)
-        forecast_val = round(max(0.0, float(forecast_res["forecasted_amount"])), 2)
-        logger.info(f"[ML] Forecast generated successfully: INR {forecast_val}")
-        return {
-            "available": True,
-            "forecasted_amount": forecast_val,
-            "forecast_features": forecast_features,
-        }
-    except Exception as e:
-        logger.error(f"[ML] Failed to compute expense forecast: {e}")
-        return {
-            "available": False,
-            "forecasted_amount": None,
-            "reason": f"Forecasting model error: {str(e)}",
-        }
 
 
 # ── 5. Main Process Orchestrator ─────────────────────────────────────────────
@@ -398,9 +337,9 @@ def process_user_transactions(
         profile_data["cluster_description"] = cluster_result["cluster_description"]
         profile_data["features_snapshot"] = cluster_result["features_snapshot"]
 
-    if forecast_result and forecast_result.get("available"):
-        profile_data["forecasted_amount"] = forecast_result["forecasted_amount"]
-        profile_data["forecast_features"] = forecast_result.get("forecast_features")
+    if forecast_result:
+        profile_data["forecasted_amount"] = forecast_result.get("ml_prediction")
+        profile_data["forecast_features"] = forecast_result
 
     try:
         client.from_("user_ml_profiles").upsert(profile_data).execute()
@@ -456,9 +395,9 @@ def update_user_ml_profile(user_id: str, token: Optional[str] = None) -> Optiona
             profile_data["cluster_label"] = cluster_result["cluster_label"]
             profile_data["cluster_description"] = cluster_result["cluster_description"]
             profile_data["features_snapshot"] = cluster_result["features_snapshot"]
-        if forecast_result and forecast_result.get("available"):
-            profile_data["forecasted_amount"] = forecast_result["forecasted_amount"]
-            profile_data["forecast_features"] = forecast_result.get("forecast_features")
+        if forecast_result:
+            profile_data["forecasted_amount"] = forecast_result.get("ml_prediction")
+            profile_data["forecast_features"] = forecast_result
 
         client.from_("user_ml_profiles").upsert(profile_data).execute()
         return profile_data

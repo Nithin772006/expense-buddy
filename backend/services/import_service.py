@@ -271,6 +271,13 @@ def confirm_import(
     except Exception:
         pass
 
+    # 8. Synchronize recurring payments and reminder statuses
+    try:
+        from services import recurring_reminder_service
+        recurring_reminder_service.sync_user_recurring_payments(user_id=user_id, token=token)
+    except Exception as e:
+        print(f"[Import] Recurring payments sync error: {e}")
+
     return {
         "import_id":       import_id,
         "total_rows":      len(rows),
