@@ -1,31 +1,76 @@
-import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Wallet, Mail, Lock, LogIn, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
+import LoginBrand from '../components/login/LoginBrand';
+import LoginCard from '../components/login/LoginCard';
+import FloatingFinanceElements from '../components/login/FloatingFinanceElements';
+import VideoShowcase from '../components/login/VideoShowcase';
+import './Login.css';
 
+/**
+ * Login Page
+ * Completely redesigned 3D Green FinTech experience matching the 3D Expense Buddy
+ * animated video and character visual universe.
+ * 
+ * Preserves all Supabase authentication logic, validation, error handling,
+ * and routing intact.
+ */
 export default function Login() {
   const [form, setForm] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [parallaxOffset, setParallaxOffset] = useState({ x: 0, y: 0 });
+  
   const navigate = useNavigate();
+  const rafRef = useRef(null);
 
-  const handleChange = (e) =>
+  // Smooth mousemove parallax tracking for background/decorative elements
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (rafRef.current) return;
+
+      rafRef.current = requestAnimationFrame(() => {
+        // Calculate normalized offset from center of screen (-1 to 1)
+        const { innerWidth, innerHeight } = window;
+        const normX = (e.clientX - innerWidth / 2) / (innerWidth / 2);
+        const normY = (e.clientY - innerHeight / 2) / (innerHeight / 2);
+
+        setParallaxOffset({
+          x: Math.max(-1, Math.min(1, normX)),
+          y: Math.max(-1, Math.min(1, normY)),
+        });
+        rafRef.current = null;
+      });
+    };
+
+    window.addEventListener('mousemove', handleMouseMove, { passive: true });
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, []);
+
+  const handleChange = (e) => {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+
     if (!form.email.trim() || !form.password) {
       setError('Please enter your email and password.');
       return;
     }
+
     setLoading(true);
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { error: authError } = await supabase.auth.signInWithPassword({
         email: form.email.trim(),
         password: form.password,
       });
-      if (error) throw error;
+
+      if (authError) throw authError;
       navigate('/');
     } catch (err) {
       setError(err.message || 'Login failed. Please try again.');
@@ -35,80 +80,42 @@ export default function Login() {
   };
 
   return (
-    <div className="auth-page">
-      <div className="auth-card">
-        {/* Brand */}
-        <div className="auth-brand">
-          <div className="auth-brand-icon">
-            <Wallet size={24} />
-          </div>
-          <span className="auth-brand-name">Expense Buddy</span>
-        </div>
+    <main className="eb-login-page">
+      {/* Ambient background glow & subtle grid */}
+      <div className="eb-ambient-blob eb-blob-1" aria-hidden="true" />
+      <div className="eb-ambient-blob eb-blob-2" aria-hidden="true" />
+      <div className="eb-bg-grid-overlay" aria-hidden="true" />
 
-        <h1 className="auth-title">Welcome back</h1>
-        <p className="auth-sub">Sign in to access your financial dashboard.</p>
+      {/* Main Two-Column Layout */}
+      <div className="eb-login-wrapper">
+        {/* LEFT 70% — Primary Login Experience & 3D Ecosystem */}
+        <section className="eb-main-panel" aria-label="Sign In Section">
+          {/* Brand header */}
+          <LoginBrand />
 
-        {error && (
-          <div className="auth-error">
-            <AlertCircle size={14} />
-            <span>{error}</span>
-          </div>
-        )}
-
-        <form className="auth-form" onSubmit={handleSubmit}>
-          <div className="auth-field">
-            <label htmlFor="login-email" className="auth-label">Email</label>
-            <div className="auth-input-wrap">
-              <Mail size={15} className="auth-input-icon" />
-              <input
-                id="login-email"
-                name="email"
-                type="email"
-                className="auth-input"
-                placeholder="you@example.com"
-                value={form.email}
-                onChange={handleChange}
-                autoComplete="email"
-                required
-              />
-            </div>
+          {/* Central Stage: Login Card framed by 3D Floating Ecosystem */}
+          <div className="eb-center-stage">
+            <FloatingFinanceElements parallaxOffset={parallaxOffset} />
+            <LoginCard
+              form={form}
+              loading={loading}
+              error={error}
+              onChange={handleChange}
+              onSubmit={handleSubmit}
+            />
           </div>
 
-          <div className="auth-field">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <label htmlFor="login-password" className="auth-label">Password</label>
-              <Link to="/forgot-password" className="auth-link" style={{ fontSize: '0.8rem' }}>
-                Forgot password?
-              </Link>
-            </div>
-            <div className="auth-input-wrap">
-              <Lock size={15} className="auth-input-icon" />
-              <input
-                id="login-password"
-                name="password"
-                type="password"
-                className="auth-input"
-                placeholder="••••••••"
-                value={form.password}
-                onChange={handleChange}
-                autoComplete="current-password"
-                required
-              />
-            </div>
-          </div>
+          {/* Footer note / copyright */}
+          <footer className="eb-panel-footer">
+            <span style={{ fontSize: '11.5px', color: 'var(--eb-text-subtle)', opacity: 0.8 }}>
+              © {new Date().getFullYear()} Expense Buddy. All rights reserved.
+            </span>
+          </footer>
+        </section>
 
-          <button type="submit" className="btn-primary auth-submit" disabled={loading}>
-            {loading ? 'Signing in…' : (
-              <><LogIn size={16} /> Sign In</>
-            )}
-          </button>
-        </form>
-
-        <p className="auth-switch">
-          Don't have an account?{' '}
-          <Link to="/register" className="auth-link">Create one</Link>
-        </p>
+        {/* RIGHT 30% — Animated Video Showcase with Perimeter Light */}
+        <VideoShowcase />
       </div>
-    </div>
+    </main>
   );
 }
