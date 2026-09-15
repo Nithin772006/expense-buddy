@@ -6,9 +6,20 @@ import CategoryChart from '../components/CategoryChart';
 import { getUserMlProfile } from '../services/api';
 import { fetchTransactions } from '../services/transactionService';
 import { CLUSTER_LABELS, formatCurrency } from '../utils/constants';
-import { Users, BarChart3, CheckCircle2, IndianRupee, AlertTriangle, ArrowRight, Upload, PlusCircle } from 'lucide-react';
+import {
+  Users,
+  BarChart3,
+  CheckCircle2,
+  IndianRupee,
+  AlertTriangle,
+  ArrowRight,
+  Upload,
+  PlusCircle,
+  Sparkles,
+  Layers,
+} from 'lucide-react';
 
-const CLUSTER_COLORS = ['purple', 'blue', 'green', 'amber', 'red'];
+const CLUSTER_COLORS = ['green', 'blue', 'amber', 'purple', 'red'];
 
 export default function SpendingAnalysis() {
   const [storedTxs, setStoredTxs] = useState([]);
@@ -28,12 +39,12 @@ export default function SpendingAnalysis() {
 
   const clusterId = mlProfile?.cluster !== undefined && mlProfile?.cluster !== null ? mlProfile.cluster : null;
   const clusterInfo = clusterId !== null ? CLUSTER_LABELS[clusterId] : null;
-  const clusterColor = clusterId !== null ? CLUSTER_COLORS[clusterId] || 'purple' : 'purple';
+  const clusterColor = clusterId !== null ? CLUSTER_COLORS[clusterId] || 'green' : 'green';
 
   const debitTxs = storedTxs.filter((t) => (t.transaction_type || 'debit').toLowerCase() === 'debit');
   const totalAmount = debitTxs.reduce((s, t) => s + (t.amount || 0), 0);
   const avgAmount = debitTxs.length > 0 ? totalAmount / debitTxs.length : 0;
-  
+
   const catCounts = {};
   debitTxs.forEach((t) => {
     const c = t.category || 'Uncategorized';
@@ -57,7 +68,7 @@ export default function SpendingAnalysis() {
         </div>
         <div className="dashboard-loading">
           <Spinner />
-          <p>Loading spending analysis...</p>
+          <p>Analyzing spending patterns &amp; clusters…</p>
         </div>
       </div>
     );
@@ -96,100 +107,144 @@ export default function SpendingAnalysis() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Spending Analysis</h1>
-          <p className="page-subtitle">Identify your customer behavior segment using AI clustering.</p>
+          <p className="page-subtitle">Identify your customer behavior segment using unsupervised KMeans clustering.</p>
         </div>
       </div>
 
-      {/* Real transaction intelligence summary */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
-        <Card style={{ padding: '1rem' }}>
-          <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Total Spending</span>
-          <p style={{ margin: '0.25rem 0 0 0', fontSize: '1.2rem', fontWeight: 700, color: '#f8fafc' }}>
+      {/* Real transaction intelligence summary ribbon */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px', marginBottom: '24px' }}>
+        <Card style={{ padding: '18px 20px' }}>
+          <span style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#688a77', fontWeight: 700 }}>
+            Total Spending
+          </span>
+          <p style={{ margin: '0.35rem 0 0 0', fontSize: '1.45rem', fontWeight: 800, color: '#132e22', letterSpacing: '-0.5px' }}>
             {formatCurrency(totalAmount)}
           </p>
-          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{debitTxs.length} expense transactions</span>
+          <span style={{ fontSize: '0.75rem', color: '#476856', marginTop: '4px', display: 'block' }}>
+            {debitTxs.length} expense transaction{debitTxs.length !== 1 ? 's' : ''}
+          </span>
         </Card>
-        <Card style={{ padding: '1rem' }}>
-          <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Average Transaction</span>
-          <p style={{ margin: '0.25rem 0 0 0', fontSize: '1.2rem', fontWeight: 700, color: '#38bdf8' }}>
+
+        <Card style={{ padding: '18px 20px' }}>
+          <span style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#688a77', fontWeight: 700 }}>
+            Average Transaction
+          </span>
+          <p style={{ margin: '0.35rem 0 0 0', fontSize: '1.45rem', fontWeight: 800, color: '#1d70b8', letterSpacing: '-0.5px' }}>
             {formatCurrency(avgAmount)}
           </p>
-          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Per expense</span>
+          <span style={{ fontSize: '0.75rem', color: '#476856', marginTop: '4px', display: 'block' }}>
+            Per individual expense
+          </span>
         </Card>
-        <Card style={{ padding: '1rem' }}>
-          <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Top Category</span>
-          <p style={{ margin: '0.25rem 0 0 0', fontSize: '1.2rem', fontWeight: 700, color: '#a855f7' }}>
+
+        <Card style={{ padding: '18px 20px' }}>
+          <span style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#688a77', fontWeight: 700 }}>
+            Top Category
+          </span>
+          <p style={{ margin: '0.35rem 0 0 0', fontSize: '1.45rem', fontWeight: 800, color: '#2d6a4f', letterSpacing: '-0.5px' }}>
             {topCategory ? topCategory[0] : 'None'}
           </p>
-          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{topCategory ? formatCurrency(topCategory[1]) : ''}</span>
+          <span style={{ fontSize: '0.75rem', color: '#476856', marginTop: '4px', display: 'block' }}>
+            {topCategory ? formatCurrency(topCategory[1]) : ''}
+          </span>
         </Card>
-        <Card style={{ padding: '1rem' }}>
-          <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Active Segment</span>
-          <p style={{ margin: '0.25rem 0 0 0', fontSize: '1.2rem', fontWeight: 700, color: '#4ade80' }}>
+
+        <Card style={{ padding: '18px 20px' }}>
+          <span style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#688a77', fontWeight: 700 }}>
+            Active AI Segment
+          </span>
+          <p style={{ margin: '0.35rem 0 0 0', fontSize: '1.45rem', fontWeight: 800, color: '#1b4332', letterSpacing: '-0.5px' }}>
             {clusterInfo ? clusterInfo.label : 'Pending Analysis'}
           </p>
-          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>KMeans 5-Cluster</span>
+          <span style={{ fontSize: '0.75rem', color: '#476856', marginTop: '4px', display: 'block' }}>
+            KMeans 5-Cluster Model
+          </span>
         </Card>
       </div>
 
       <div className="two-col-layout">
-        
-        {/* ── Visual Insights ── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        {/* ── Left: Visual Insights ── */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <Card>
             <div className="card-title-row">
-              <BarChart3 size={15} />
+              <BarChart3 size={18} />
               <h2 className="card-title">Spending by Category</h2>
             </div>
             <CategoryChart transactions={storedTxs} />
           </Card>
-          
+
           <Card>
             <div className="card-title-row">
-              <IndianRupee size={15} />
+              <IndianRupee size={18} />
               <h2 className="card-title">Top Expense Categories</h2>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem' }}>
-              {sortedCategories.slice(0, 4).map(([cat, amt]) => (
-                <div key={cat} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ color: '#e2e8f0', fontSize: '0.95rem' }}>{cat}</span>
-                  <span style={{ color: '#94a3b8', fontSize: '0.95rem', fontWeight: 600 }}>{formatCurrency(amt)}</span>
-                </div>
-              ))}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '8px' }}>
+              {sortedCategories.slice(0, 5).map(([cat, amt], idx) => {
+                const pct = totalAmount > 0 ? ((amt / totalAmount) * 100).toFixed(0) : 0;
+                return (
+                  <div
+                    key={cat}
+                    style={{
+                      padding: '10px 14px',
+                      borderRadius: '12px',
+                      background: '#ffffff',
+                      border: '1px solid rgba(82, 183, 136, 0.16)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#2d6a4f', width: '20px' }}>
+                        #{idx + 1}
+                      </span>
+                      <span style={{ color: '#132e22', fontSize: '0.95rem', fontWeight: 600 }}>{cat}</span>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <span style={{ color: '#1b4332', fontSize: '0.95rem', fontWeight: 800 }}>
+                        {formatCurrency(amt)}
+                      </span>
+                      <span style={{ fontSize: '0.75rem', color: '#688a77', marginLeft: '6px' }}>
+                        ({pct}%)
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </Card>
-          
+
           {anomalyCount > 0 && (
-             <Card style={{ borderLeft: '4px solid #ef4444' }}>
-              <div className="card-title-row">
-                <AlertTriangle size={15} color="#ef4444" />
-                <h2 className="card-title" style={{ color: '#f8fafc' }}>Anomalous Transactions Detected</h2>
+            <Card style={{ borderLeft: '4px solid #dc2626', background: 'rgba(254, 242, 242, 0.7)' }}>
+              <div className="card-title-row" style={{ color: '#dc2626' }}>
+                <AlertTriangle size={18} />
+                <h2 className="card-title" style={{ color: '#b91c1c' }}>Anomalous Transactions Detected</h2>
               </div>
-              <p style={{ marginTop: '0.75rem', fontSize: '0.9rem', color: '#cbd5e1' }}>
-                Our AI anomaly detection model has flagged <strong>{anomalyCount}</strong> unusual transaction{anomalyCount > 1 ? 's' : ''} based on your spending history. Check your dashboard for more details.
+              <p style={{ marginTop: '0.5rem', fontSize: '0.9rem', color: '#476856', lineHeight: '1.5' }}>
+                Our AI anomaly detection model has flagged <strong>{anomalyCount}</strong> unusual transaction{anomalyCount > 1 ? 's' : ''} based on deviation from your median spending.
               </p>
-              <Link to="/" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', marginTop: '1rem', color: '#38bdf8', fontSize: '0.85rem', textDecoration: 'none', fontWeight: 600 }}>
-                View Dashboard <ArrowRight size={14} />
+              <Link to="/" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.75rem', color: '#2d6a4f', fontSize: '0.85rem', textDecoration: 'none', fontWeight: 700 }}>
+                Review on Dashboard <ArrowRight size={14} />
               </Link>
-             </Card>
+            </Card>
           )}
         </div>
 
-        {/* ── Cluster Result ── */}
+        {/* ── Right: Cluster Result ── */}
         <div className="results-col">
           {clusterInfo ? (
-            <Card className={`cluster-result-card cluster-result-card--${clusterColor}`}>
+            <Card className="cluster-result-card">
               <div className="cluster-result-header">
-                <span className={`cluster-badge cluster-badge--${clusterColor}`}>
+                <span className="cluster-badge">
                   Cluster {clusterId}
                 </span>
                 <span className="cluster-active-badge">
-                  <CheckCircle2 size={11} /> Model Active
+                  <CheckCircle2 size={12} /> Model Active
                 </span>
               </div>
 
-              <div className={`cluster-icon-wrap cluster-icon-wrap--${clusterColor}`}>
-                <Users size={32} />
+              <div className="cluster-icon-wrap">
+                <Users size={30} />
               </div>
 
               <div className="cluster-label-section">
@@ -209,7 +264,7 @@ export default function SpendingAnalysis() {
                     <span className="cluster-ref-num">C{k}</span>
                     <span className="cluster-ref-name">{v.label}</span>
                     {parseInt(k) === clusterId && (
-                      <CheckCircle2 size={13} className="cluster-ref-check" />
+                      <CheckCircle2 size={14} className="cluster-ref-check" />
                     )}
                   </div>
                 ))}
@@ -217,13 +272,27 @@ export default function SpendingAnalysis() {
             </Card>
           ) : (
             <Card className="result-empty">
-              <Users size={36} className="result-empty-icon" />
+              <div
+                style={{
+                  width: '56px',
+                  height: '56px',
+                  borderRadius: '16px',
+                  background: '#eaf5ee',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#2d6a4f',
+                  marginBottom: '8px',
+                }}
+              >
+                <Users size={28} />
+              </div>
               <p className="empty-state-title">No Segment Identified</p>
-              <p>Your transactions have not yet been assigned a spending behavior cluster.</p>
+              <p style={{ color: 'var(--text-2)' }}>Your transactions have not yet been clustered.</p>
               <p className="empty-state-sub">
-                Run the AI analysis from your dashboard or add more transactions to generate your profile.
+                Run the AI analysis from your dashboard to categorize your spending segment.
               </p>
-              <Link to="/" className="btn-secondary" style={{ marginTop: '1rem' }}>
+              <Link to="/" className="btn-secondary" style={{ marginTop: '12px' }}>
                 Go to Dashboard
               </Link>
             </Card>

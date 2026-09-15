@@ -10,7 +10,7 @@ import { saveTransaction, generateId } from '../utils/storage';
 import { saveTransactionToSupabase } from '../services/transactionService';
 import { supabase } from '../lib/supabaseClient';
 import { formatCurrency } from '../utils/constants';
-import { Tag, CheckCircle2, PlusCircle } from 'lucide-react';
+import { Tag, CheckCircle2, PlusCircle, Sparkles, ArrowRight, ShieldCheck, ShieldAlert, Receipt } from 'lucide-react';
 
 const initialForm = {
   description: '',
@@ -118,14 +118,17 @@ export default function AddExpense() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Add Expense</h1>
-          <p className="page-subtitle">Classify your transaction and detect anomalies instantly.</p>
+          <p className="page-subtitle">Classify your transaction with TF-IDF AI and detect pattern anomalies instantly.</p>
         </div>
       </div>
 
       <div className="two-col-layout">
-        {/* ── Form ── */}
+        {/* ── Form Card ── */}
         <Card>
-          <h2 className="card-title">Transaction Details</h2>
+          <div className="card-title-row">
+            <Receipt size={18} />
+            <h2 className="card-title">Transaction Details</h2>
+          </div>
           <form className="form" onSubmit={handleSubmit}>
             <FormField
               label="Transaction Description"
@@ -133,7 +136,7 @@ export default function AddExpense() {
               type="text"
               value={form.description}
               onChange={handleChange}
-              placeholder="e.g. Zomato dinner, Netflix subscription, Petrol…"
+              placeholder="e.g. Zomato dinner, Netflix subscription, Petrol pump…"
             />
             <div className="form-row">
               <FormField label="Amount (₹)" name="transaction_amount" value={form.transaction_amount} onChange={handleChange} placeholder="e.g. 450" />
@@ -151,25 +154,33 @@ export default function AddExpense() {
               />
             </div>
             <div className="form-row">
-              <FormField label="EMI Amount (₹)" name="emi_amount" value={form.emi_amount} onChange={handleChange} placeholder="0 if no EMI" />
+              <FormField label="EMI Amount (₹)" name="emi_amount" value={form.emi_amount} onChange={handleChange} placeholder="0 if no active EMI" />
               <FormField label="Transaction Hour (0–23)" name="transaction_hour" value={form.transaction_hour} onChange={handleChange} placeholder="e.g. 14" min={0} max={23} />
             </div>
 
             <ErrorAlert message={error} />
 
-            <button type="submit" className="btn-primary" disabled={loading}>
-              {loading ? 'Analyzing…' : 'Analyze & Save Transaction'}
+            <button type="submit" className="btn-primary" disabled={loading} style={{ marginTop: '6px' }}>
+              {loading ? (
+                <>
+                  <Spinner size={16} /> Analyzing with AI…
+                </>
+              ) : (
+                <>
+                  <Sparkles size={16} /> Analyze &amp; Save Expense
+                </>
+              )}
             </button>
           </form>
         </Card>
 
-        {/* ── Results ── */}
+        {/* ── Results Column ── */}
         <div className="results-col">
           {loading && (
-            <div className="results-loading">
+            <Card className="results-loading">
               <Spinner />
-              <p>Running AI classification and anomaly detection…</p>
-            </div>
+              <p style={{ fontWeight: 600, color: 'var(--eb-forest)' }}>Running AI classification &amp; anomaly detection…</p>
+            </Card>
           )}
 
           {result && !loading && (
@@ -197,7 +208,7 @@ export default function AddExpense() {
                   </span>
                 </div>
                 <div className="result-summary-row">
-                  <span className="result-summary-key">Category</span>
+                  <span className="result-summary-key">Predicted Category</span>
                   <span className="result-summary-val result-category">
                     <Tag size={13} /> {result.category}
                   </span>
@@ -211,17 +222,17 @@ export default function AddExpense() {
               {/* AI explanation */}
               <div className={`result-ai-note ${result.is_anomaly ? 'result-ai-note--warn' : 'result-ai-note--ok'}`}>
                 {result.is_anomaly
-                  ? 'AI detected unusual transaction behavior. This may warrant a closer review — it is not confirmed as fraud.'
-                  : 'This transaction appears within your normal spending pattern. No unusual behavior detected.'}
+                  ? 'AI detected unusual transaction behavior based on Isolation Forest metrics. This warrants review — it is not confirmed as fraud.'
+                  : 'This transaction appears completely within your normal spending pattern. No anomalies detected.'}
               </div>
 
               {/* Actions */}
               <div className="result-actions">
-                <button className="btn-secondary" onClick={handleAddAnother}>
-                  <PlusCircle size={14} /> Add Another
+                <button className="btn-secondary" onClick={handleAddAnother} style={{ flex: 1 }}>
+                  <PlusCircle size={15} /> Add Another
                 </button>
-                <button className="btn-primary btn-sm" onClick={() => navigate('/')}>
-                  View Dashboard
+                <button className="btn-primary btn-sm" onClick={() => navigate('/')} style={{ flex: 1 }}>
+                  Dashboard <ArrowRight size={14} />
                 </button>
               </div>
             </Card>
@@ -229,10 +240,28 @@ export default function AddExpense() {
 
           {!loading && !result && (
             <Card className="result-empty">
-              <Tag size={36} className="result-empty-icon" />
-              <p className="empty-state-title">Ready to Analyze</p>
-              <p>Fill in the form and click <strong>Analyze &amp; Save Transaction</strong>.</p>
-              <p className="empty-state-sub">The AI will classify your expense and check for unusual patterns.</p>
+              <div
+                style={{
+                  width: '56px',
+                  height: '56px',
+                  borderRadius: '16px',
+                  background: '#eaf5ee',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#2d6a4f',
+                  marginBottom: '6px',
+                }}
+              >
+                <Sparkles size={28} />
+              </div>
+              <p className="empty-state-title" style={{ fontSize: '1.1rem' }}>Ready to Analyze</p>
+              <p style={{ color: 'var(--text-2)', maxWidth: '300px', margin: '0 auto' }}>
+                Fill in the transaction details and click <strong>Analyze &amp; Save Expense</strong>.
+              </p>
+              <p className="empty-state-sub" style={{ fontSize: '0.8rem', color: 'var(--text-3)' }}>
+                Our ML models will predict category and flag unusual amounts against your account balance.
+              </p>
             </Card>
           )}
         </div>

@@ -1,6 +1,6 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import Sidebar from './components/Sidebar';
+import TopNavigation from './components/TopNavigation';
 import ProtectedRoute from './components/ProtectedRoute';
 import Dashboard from './pages/Dashboard';
 import AddExpense from './pages/AddExpense';
@@ -18,19 +18,19 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Public routes — no sidebar */}
+        {/* Public routes — standalone */}
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
 
-        {/* Protected routes — with sidebar */}
+        {/* Protected routes — with top navigation */}
         <Route
           path="/*"
           element={
             <ProtectedRoute>
               <div className="app-shell">
-                <Sidebar />
+                <TopNavigation />
                 <main className="main-content">
                   <Routes>
                     <Route path="/"                   element={<Dashboard />} />

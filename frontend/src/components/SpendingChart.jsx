@@ -41,32 +41,38 @@ export default function SpendingChart({ transactions }) {
   const data = Object.entries(byDate).map(([date, amount]) => ({ date, amount }));
 
   return (
-    <ResponsiveContainer width="100%" height={220}>
-      <AreaChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 8 }}>
+    <ResponsiveContainer width="100%" height={230}>
+      <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
         <defs>
-          <linearGradient id="spendGradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor="#7c5cfc" stopOpacity={0.25} />
-            <stop offset="95%" stopColor="#7c5cfc" stopOpacity={0} />
+          <linearGradient id="ebSpendGradient" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor="#2d6a4f" stopOpacity={0.28} />
+            <stop offset="60%" stopColor="#52b788" stopOpacity={0.12} />
+            <stop offset="95%" stopColor="#d8f3dc" stopOpacity={0} />
           </linearGradient>
         </defs>
-        <CartesianGrid strokeDasharray="3 3" stroke="#252a38" vertical={false} />
-        <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#5a6282' }} axisLine={false} tickLine={false} />
+        <CartesianGrid strokeDasharray="3 3" stroke="rgba(82, 183, 136, 0.18)" vertical={false} />
+        <XAxis
+          dataKey="date"
+          tick={{ fontSize: 11.5, fill: '#476856', fontWeight: 500 }}
+          axisLine={false}
+          tickLine={false}
+        />
         <YAxis
-          tick={{ fontSize: 11, fill: '#5a6282' }}
+          tick={{ fontSize: 11.5, fill: '#476856', fontWeight: 500 }}
           axisLine={false}
           tickLine={false}
           tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`}
-          width={45}
+          width={48}
         />
         <Tooltip content={<CustomTooltip />} />
         <Area
           type="monotone"
           dataKey="amount"
-          stroke="#7c5cfc"
-          strokeWidth={2}
-          fill="url(#spendGradient)"
-          dot={{ r: 3, fill: '#7c5cfc', strokeWidth: 0 }}
-          activeDot={{ r: 5 }}
+          stroke="#2d6a4f"
+          strokeWidth={2.5}
+          fill="url(#ebSpendGradient)"
+          dot={{ r: 3, fill: '#2d6a4f', strokeWidth: 1.5, stroke: '#ffffff' }}
+          activeDot={{ r: 6, fill: '#1b4332', stroke: '#52b788', strokeWidth: 2 }}
         />
       </AreaChart>
     </ResponsiveContainer>

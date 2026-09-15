@@ -35,8 +35,13 @@ export default function ForgotPassword() {
     <div className="auth-page">
       <div className="auth-card">
         <div className="auth-brand">
-          <div className="auth-brand-icon"><Wallet size={24} /></div>
-          <span className="auth-brand-name">Expense Buddy</span>
+          <div className="auth-brand-icon" style={{ background: '#eaf5ee', border: '1px solid rgba(82, 183, 136, 0.35)', padding: '4px' }}>
+            <img src="/assets/expense-buddy/wallet-3d.svg" alt="" width="26" height="26" />
+          </div>
+          <span className="auth-brand-name">
+            <span style={{ color: 'var(--eb-forest)' }}>Expense</span>{' '}
+            <span style={{ color: 'var(--eb-emerald)' }}>Buddy</span>
+          </span>
         </div>
 
         <h1 className="auth-title">Reset password</h1>
