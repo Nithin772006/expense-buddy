@@ -162,7 +162,7 @@ export default function Dashboard() {
     <div className="page dashboard-page">
       {/* ── Page Header ── */}
       <div className="page-header">
-        <div>
+        <div className="page-header-title-block">
           <h1 className="page-title">{greeting}.</h1>
           <p className="page-subtitle">Your financial world, intelligently organized.</p>
         </div>
@@ -175,7 +175,7 @@ export default function Dashboard() {
 
           {hasData && (
             <button
-              className="btn-secondary btn-sm"
+              className="btn-secondary"
               onClick={handleRunMl}
               disabled={mlProcessing}
               title="Run AI models on your transactions"
@@ -185,10 +185,10 @@ export default function Dashboard() {
             </button>
           )}
 
-          <Link to="/import-transactions" className="btn-secondary btn-sm">
+          <Link to="/import-transactions" className="btn-secondary">
             <Upload size={14} /> Import
           </Link>
-          <Link to="/add-expense" className="btn-primary btn-sm">
+          <Link to="/add-expense" className="btn-primary">
             <PlusCircle size={14} /> Add Expense
           </Link>
         </div>
@@ -196,22 +196,7 @@ export default function Dashboard() {
 
       {/* ML Status banner */}
       {mlStatusMessage && (
-        <div
-          style={{
-            marginBottom: '1.25rem',
-            padding: '0.85rem 1.25rem',
-            borderRadius: '12px',
-            background: mlProcessing ? 'rgba(82, 183, 136, 0.12)' : 'rgba(216, 243, 220, 0.9)',
-            border: `1px solid ${mlProcessing ? 'rgba(82, 183, 136, 0.35)' : 'rgba(45, 106, 79, 0.3)'}`,
-            color: mlProcessing ? 'var(--eb-forest)' : '#1b4332',
-            fontSize: '0.9rem',
-            fontWeight: 600,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.6rem',
-            boxShadow: '0 2px 8px rgba(13, 38, 28, 0.04)',
-          }}
-        >
+        <div className="eb-ml-status-banner">
           {mlProcessing ? <Spinner size={16} /> : <Sparkles size={16} color="#2d6a4f" />}
           <span>{mlStatusMessage}</span>
         </div>
@@ -261,7 +246,7 @@ export default function Dashboard() {
               label="Average Expense"
               value={formatCurrency(avgExpense)}
               sub="Per debit transaction"
-              color="blue"
+              color="emerald"
             />
             <StatCard
               icon={ReceiptText}
@@ -279,83 +264,22 @@ export default function Dashboard() {
             />
           </div>
 
-          {/* ── AI Financial Insight Banner ── */}
-          <Card
-            style={{
-              marginBottom: '1.5rem',
-              padding: '1.25rem 1.5rem',
-              background: 'linear-gradient(135deg, rgba(234, 245, 238, 0.95) 0%, rgba(255, 255, 255, 0.98) 100%)',
-              border: '1px solid rgba(82, 183, 136, 0.35)',
-              boxShadow: '0 8px 24px rgba(45, 106, 79, 0.06)',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                <div
-                  style={{
-                    width: '44px',
-                    height: '44px',
-                    borderRadius: '12px',
-                    background: 'linear-gradient(135deg, #2d6a4f 0%, #1b4332 100%)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: '#ffffff',
-                    boxShadow: '0 3px 10px rgba(45, 106, 79, 0.25)',
-                    flexShrink: 0,
-                  }}
-                >
-                  <Sparkles size={22} />
-                </div>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#2d6a4f', fontWeight: 800 }}>
-                      AI Financial Insight
-                    </span>
-                    {mlProfile?.cluster_label && (
-                      <span style={{ fontSize: '0.7rem', padding: '1px 7px', borderRadius: '999px', background: '#d8f3dc', color: '#1b4332', fontWeight: 700 }}>
-                        {mlProfile.cluster_label}
-                      </span>
-                    )}
-                  </div>
-                  <h3 style={{ margin: '0.2rem 0 0 0', fontSize: '1.05rem', color: '#132e22', fontWeight: 700 }}>
-                    {mlProfile?.cluster_description || `Your highest spending category is ${topCategory}. All transactions are mapped to AI behavior models.`}
-                  </h3>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
-                {mlProfile?.forecasted_amount !== null && mlProfile?.forecasted_amount !== undefined && (
-                  <div style={{ textAlign: 'right' }}>
-                    <span style={{ fontSize: '0.75rem', color: '#688a77', fontWeight: 600 }}>Next Expense Forecast</span>
-                    <p style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: '#1b4332' }}>
-                      {formatCurrency(mlProfile.forecasted_amount)}
-                    </p>
-                  </div>
-                )}
-                <Link to="/spending-analysis" className="btn-secondary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                  View Analysis <ArrowRight size={13} />
-                </Link>
-              </div>
-            </div>
-          </Card>
-
           {/* ── Quick Actions Ribbon ── */}
           <div className="quick-actions-grid">
             <Link to="/add-expense" className="quick-action-btn">
-              <PlusCircle size={16} style={{ color: '#2d6a4f', flexShrink: 0 }} />
+              <PlusCircle size={16} className="quick-action-icon" />
               <span>Add Expense</span>
             </Link>
             <Link to="/import-transactions" className="quick-action-btn">
-              <Upload size={16} style={{ color: '#2d6a4f', flexShrink: 0 }} />
+              <Upload size={16} className="quick-action-icon" />
               <span>Import Transactions</span>
             </Link>
             <Link to="/spending-analysis" className="quick-action-btn">
-              <BarChart3 size={16} style={{ color: '#2d6a4f', flexShrink: 0 }} />
+              <BarChart3 size={16} className="quick-action-icon" />
               <span>Spending Analysis</span>
             </Link>
             <Link to="/forecast" className="quick-action-btn">
-              <TrendingUp size={16} style={{ color: '#2d6a4f', flexShrink: 0 }} />
+              <TrendingUp size={16} className="quick-action-icon" />
               <span>View Forecast</span>
             </Link>
           </div>
@@ -370,7 +294,7 @@ export default function Dashboard() {
               <SpendingChart transactions={transactions} />
             </Card>
 
-            <Card className="chart-card chart-card--narrow">
+            <Card className="chart-card chart-card--category">
               <div className="card-title-row">
                 <ReceiptText size={16} />
                 <h2 className="card-title">Expense Categories</h2>
@@ -381,10 +305,10 @@ export default function Dashboard() {
 
           {/* ── Smart Recurring Payments Preview (Signature Feature) ── */}
           {confirmedPayments.length > 0 && (
-            <Card style={{ marginBottom: '24px', padding: '20px 24px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <CalendarClock size={18} style={{ color: '#2d6a4f' }} />
+            <Card className="recurring-preview-card">
+              <div className="card-header-row">
+                <div className="card-title-row">
+                  <CalendarClock size={18} />
                   <h2 className="card-title">Smart Recurring Commitments</h2>
                 </div>
                 <Link to="/recurring-payments" className="card-link">
@@ -392,59 +316,34 @@ export default function Dashboard() {
                 </Link>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px' }}>
+              <div className="recurring-preview-grid">
                 {confirmedPayments.slice(0, 3).map((p) => {
                   const isDueSoon = p.current_cycle_status === 'due_soon' || p.current_cycle_status === 'due_today';
                   const isOverdue = p.current_cycle_status === 'overdue';
                   return (
-                    <div
-                      key={p.id}
-                      style={{
-                        padding: '12px 16px',
-                        borderRadius: '14px',
-                        background: '#ffffff',
-                        border: '1px solid rgba(82, 183, 136, 0.22)',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        boxShadow: '0 2px 8px rgba(13, 38, 28, 0.03)',
-                      }}
-                    >
+                    <div key={p.id} className="recurring-item-card">
                       <div>
-                        <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#132e22' }}>
+                        <div className="recurring-merchant-name">
                           {p.merchant}
                         </div>
-                        <div style={{ fontSize: '0.78rem', color: '#688a77', marginTop: '2px' }}>
+                        <div className="recurring-meta-sub">
                           {p.category} • <span style={{ textTransform: 'capitalize' }}>{p.frequency}</span>
                         </div>
                       </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#1b4332' }}>
+                      <div className="recurring-item-right">
+                        <div className="recurring-amount">
                           {formatCurrency(p.average_amount)}
                         </div>
                         <span
-                          style={{
-                            fontSize: '0.7rem',
-                            fontWeight: 700,
-                            padding: '1px 6px',
-                            borderRadius: '4px',
-                            display: 'inline-block',
-                            marginTop: '3px',
-                            background: p.is_paid
-                              ? '#d8f3dc'
+                          className={`recurring-badge ${
+                            p.is_paid
+                              ? 'recurring-badge--paid'
                               : isOverdue
-                              ? '#fee2e2'
+                              ? 'recurring-badge--overdue'
                               : isDueSoon
-                              ? '#fef3c7'
-                              : '#eaf5ee',
-                            color: p.is_paid
-                              ? '#1b4332'
-                              : isOverdue
-                              ? '#b91c1c'
-                              : isDueSoon
-                              ? '#b45309'
-                              : '#2d6a4f',
-                          }}
+                              ? 'recurring-badge--due'
+                              : 'recurring-badge--upcoming'
+                          }`}
                         >
                           {p.is_paid ? 'PAID' : (p.current_cycle_status || 'UPCOMING').toUpperCase().replace('_', ' ')}
                         </span>

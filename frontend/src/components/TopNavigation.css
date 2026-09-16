@@ -8,8 +8,8 @@
   top: 0;
   left: 0;
   right: 0;
-  height: 72px;
-  background: rgba(255, 255, 255, 0.86);
+  height: 70px;
+  background: rgba(255, 255, 255, 0.90);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border-bottom: 1px solid rgba(82, 183, 136, 0.22);
@@ -21,14 +21,15 @@
 }
 
 .eb-top-nav-inner {
-  max-width: 1320px;
+  max-width: var(--eb-container-max, 1280px);
   width: 100%;
   margin: 0 auto;
-  padding: 0 28px;
+  padding: 0 var(--eb-container-pad-x, 32px);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  box-sizing: border-box;
 }
 
 /* ── Brand Lockup (Left) ── */
@@ -42,57 +43,58 @@
 }
 
 .eb-nav-logo-mark {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #eaf5ee 0%, #d8f3dc 100%);
-  border: 1px solid rgba(82, 183, 136, 0.3);
-  box-shadow: 0 3px 10px rgba(45, 106, 79, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
+  filter: drop-shadow(0 4px 10px rgba(27, 67, 50, 0.16));
   transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .eb-nav-brand:hover .eb-nav-logo-mark {
-  transform: translateY(-1px) scale(1.03);
+  transform: translateY(-1px) scale(1.05);
 }
 
 .eb-nav-logo-img {
-  width: 28px;
-  height: 28px;
+  width: 34px;
+  height: 34px;
   object-fit: contain;
+  display: block;
 }
 
 .eb-nav-brand-text {
   display: flex;
   align-items: baseline;
-  font-size: 19px;
+  font-size: 20px;
   font-weight: 800;
-  letter-spacing: -0.5px;
+  letter-spacing: -0.02em;
   line-height: 1;
 }
 
-.eb-brand-expense {
+.eb-brand-word-expense {
   color: var(--eb-forest, #1b4332);
 }
 
-.eb-brand-buddy {
-  color: var(--eb-emerald, #2d6a4f);
-  margin-left: 2px;
+.eb-brand-word-buddy {
+  color: var(--eb-emerald-light, #40916c);
+  background: linear-gradient(135deg, #40916c 0%, #2d6a4f 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-left: 3px;
 }
 
 .eb-nav-badge {
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 800;
   letter-spacing: 0.8px;
   text-transform: uppercase;
-  color: #2d6a4f;
+  color: #1b4332;
   background: #d8f3dc;
   border: 1px solid rgba(82, 183, 136, 0.4);
   padding: 2px 7px;
   border-radius: 999px;
-  margin-left: 4px;
+  margin-left: 5px;
 }
 
 /* ── Center Navigation Links ── */
@@ -149,7 +151,7 @@
 .eb-nav-right {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 /* Backend Status Pill */
@@ -157,22 +159,24 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 12px;
+  height: 36px;
+  padding: 0 13px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 600;
   border: 1px solid transparent;
   transition: all 0.2s ease;
+  box-sizing: border-box;
 }
 
 .eb-status-chip--ok {
-  background: rgba(216, 243, 220, 0.8);
+  background: rgba(216, 243, 220, 0.85);
   border-color: rgba(82, 183, 136, 0.4);
   color: #1b4332;
 }
 
 .eb-status-chip--err {
-  background: rgba(254, 226, 226, 0.8);
+  background: rgba(254, 226, 226, 0.85);
   border-color: rgba(248, 113, 113, 0.4);
   color: #b91c1c;
 }
@@ -201,16 +205,18 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
+  height: 36px;
   background: linear-gradient(135deg, #2d6a4f 0%, #1b4332 100%);
   color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 999px;
-  padding: 7px 15px;
+  padding: 0 16px;
   font-size: 12.5px;
   font-weight: 600;
   box-shadow: 0 3px 10px rgba(27, 67, 50, 0.22);
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   cursor: pointer;
+  box-sizing: border-box;
 }
 
 .eb-nav-ai-btn:hover:not(:disabled) {
@@ -230,12 +236,14 @@
 /* Icon Buttons (Notifications, etc) */
 .eb-dropdown-wrap {
   position: relative;
+  display: flex;
+  align-items: center;
 }
 
 .eb-icon-btn {
-  width: 38px;
-  height: 38px;
-  border-radius: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
   background: #ffffff;
   border: 1px solid rgba(82, 183, 136, 0.25);
   color: #476856;
@@ -246,6 +254,7 @@
   position: relative;
   transition: all 0.18s ease;
   box-shadow: 0 2px 6px rgba(13, 38, 28, 0.03);
+  box-sizing: border-box;
 }
 
 .eb-icon-btn:hover,
@@ -258,10 +267,10 @@
 
 .eb-notif-dot {
   position: absolute;
-  top: 7px;
-  right: 7px;
-  width: 8px;
-  height: 8px;
+  top: 6px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: #ef4444;
   border: 1.5px solid #ffffff;
@@ -272,13 +281,15 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  height: 36px;
   background: #ffffff;
   border: 1px solid rgba(82, 183, 136, 0.25);
   border-radius: 999px;
-  padding: 4px 10px 4px 4px;
+  padding: 0 10px 0 3px;
   cursor: pointer;
   transition: all 0.18s ease;
   box-shadow: 0 2px 6px rgba(13, 38, 28, 0.03);
+  box-sizing: border-box;
 }
 
 .eb-profile-btn:hover {
@@ -288,15 +299,15 @@
 }
 
 .eb-avatar-circle {
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   background: linear-gradient(135deg, #52b788 0%, #2d6a4f 100%);
   color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 700;
   box-shadow: 0 2px 5px rgba(45, 106, 79, 0.2);
 }

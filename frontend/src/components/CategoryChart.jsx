@@ -59,15 +59,15 @@ export default function CategoryChart({ transactions }) {
   const data = Object.entries(byCat).map(([name, value]) => ({ name, value }));
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: 260 }}>
-      <ResponsiveContainer width="100%" height={260}>
+    <div style={{ position: 'relative', width: '100%', height: 240 }}>
+      <ResponsiveContainer width="100%" height={240}>
         <PieChart>
           <Pie
             data={data}
             cx="50%"
             cy="45%"
-            innerRadius={62}
-            outerRadius={96}
+            innerRadius={58}
+            outerRadius={90}
             paddingAngle={3}
             dataKey="value"
             stroke="#ffffff"

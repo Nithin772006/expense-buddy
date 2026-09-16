@@ -217,13 +217,13 @@ export default function TopNavigation() {
               src="/assets/expense-buddy/wallet-3d.svg"
               alt="Expense Buddy"
               className="eb-nav-logo-img"
-              width="36"
-              height="36"
+              width="34"
+              height="34"
             />
           </div>
           <div className="eb-nav-brand-text">
-            <span className="eb-brand-expense">Expense</span>
-            <span className="eb-brand-buddy">Buddy</span>
+            <span className="eb-brand-word-expense">Expense</span>
+            <span className="eb-brand-word-buddy">Buddy</span>
           </div>
           <span className="eb-nav-badge">AI</span>
         </Link>

@@ -1,8 +1,8 @@
 import React from 'react';
 
-export default function Card({ children, className = '' }) {
+export default function Card({ children, className = '', ...props }) {
   return (
-    <div className={`card ${className}`}>
+    <div className={`card ${className}`} {...props}>
       {children}
     </div>
   );
