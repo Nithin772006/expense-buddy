@@ -9,17 +9,21 @@
       <stop offset="0%" stop-color="#1b4332" stop-opacity="0.15" />
       <stop offset="100%" stop-color="#1b4332" stop-opacity="0.0" />
     </linearGradient>
-    <filter id="bagShadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="7" stdDeviation="7" flood-color="#1b4332" flood-opacity="0.25" />
+    <filter id="bagShadow" x="0" y="0" width="120" height="120" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="2.2" />
     </filter>
   </defs>
+
+  <!-- 3D Dimensional Ground & Drop Shadow (decays to zero well before boundary) -->
+  <ellipse cx="60" cy="111" rx="34" ry="4" fill="#1b4332" opacity="0.14" filter="url(#bagShadow)" />
+  <ellipse cx="60" cy="110" rx="32" ry="3" fill="#1b4332" opacity="0.06" />
 
   <!-- Handles -->
   <path d="M 45 42 C 45 22 53 16 60 16 C 67 16 75 22 75 42" fill="none" stroke="#d8f3dc" stroke-width="4.5" stroke-linecap="round" />
   <path d="M 45 42 C 45 25 53 19 60 19 C 67 19 75 25 75 42" fill="none" stroke="#40916c" stroke-width="2" stroke-linecap="round" opacity="0.6" />
 
   <!-- Bag Main Body -->
-  <path d="M 30 42 L 90 42 L 96 102 C 96 106 92 110 87 110 L 33 110 C 28 110 24 106 24 102 Z" fill="url(#bagFront)" filter="url(#bagShadow)" />
+  <path d="M 30 42 L 90 42 L 96 102 C 96 106 92 110 87 110 L 33 110 C 28 110 24 106 24 102 Z" fill="url(#bagFront)" />
 
   <!-- Top Rim Crease -->
   <path d="M 30 42 L 90 42 L 89 48 L 31 48 Z" fill="#d8f3dc" opacity="0.4" />

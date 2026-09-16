@@ -114,7 +114,7 @@ export default function AddExpense() {
   };
 
   return (
-    <div className="page">
+    <div className="page add-expense-page">
       <div className="page-header">
         <div>
           <h1 className="page-title">Add Expense</h1>

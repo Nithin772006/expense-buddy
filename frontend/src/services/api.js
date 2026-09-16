@@ -61,23 +61,43 @@ export const getOverdueRecurringPayments = () =>
 export const getPaymentCycleHistory = (paymentId) =>
   api.get(`/recurring-payments/${paymentId}/history`);
 
-export const triggerRecurringDetection = () =>
-  api.post('/recurring-payments/detect');
+import { invalidateRecurringPayments, invalidateUserData } from './queryCache';
 
-export const confirmRecurringPayment = (paymentId) =>
-  api.post(`/recurring-payments/${paymentId}/confirm`);
+export const triggerRecurringDetection = async () => {
+  const res = await api.post('/recurring-payments/detect');
+  invalidateRecurringPayments();
+  return res;
+};
 
-export const dismissRecurringPayment = (paymentId) =>
-  api.post(`/recurring-payments/${paymentId}/dismiss`);
+export const confirmRecurringPayment = async (paymentId) => {
+  const res = await api.post(`/recurring-payments/${paymentId}/confirm`);
+  invalidateRecurringPayments();
+  return res;
+};
 
-export const pauseRecurringPayment = (paymentId) =>
-  api.post(`/recurring-payments/${paymentId}/pause`);
+export const dismissRecurringPayment = async (paymentId) => {
+  const res = await api.post(`/recurring-payments/${paymentId}/dismiss`);
+  invalidateRecurringPayments();
+  return res;
+};
 
-export const resumeRecurringPayment = (paymentId) =>
-  api.post(`/recurring-payments/${paymentId}/resume`);
+export const pauseRecurringPayment = async (paymentId) => {
+  const res = await api.post(`/recurring-payments/${paymentId}/pause`);
+  invalidateRecurringPayments();
+  return res;
+};
 
-export const markRecurringPaymentPaid = (paymentId, payload) =>
-  api.post(`/recurring-payments/${paymentId}/mark-paid`, payload);
+export const resumeRecurringPayment = async (paymentId) => {
+  const res = await api.post(`/recurring-payments/${paymentId}/resume`);
+  invalidateRecurringPayments();
+  return res;
+};
+
+export const markRecurringPaymentPaid = async (paymentId, payload) => {
+  const res = await api.post(`/recurring-payments/${paymentId}/mark-paid`, payload);
+  invalidateRecurringPayments();
+  return res;
+};
 
 export default api;
 

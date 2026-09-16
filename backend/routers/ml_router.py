@@ -59,6 +59,12 @@ async def process_ml(
         )
 
 
+import logging
+import time
+
+logger = logging.getLogger("expense_buddy.ml_router")
+
+
 @router.get("/profile")
 async def get_user_ml_profile(
     user_id: str = Depends(get_current_user_id),
@@ -67,8 +73,9 @@ async def get_user_ml_profile(
     """
     Retrieve the authenticated user's persistent ML profile
     (spending cluster, cluster description, and latest expense forecast).
+    Strictly read-only: returns stored results immediately without recalculating ML.
     """
-    token = authorization.split("Bearer ")[1].strip() if authorization else None
+    t_start = time.perf_counter()
     try:
         client = _get_supabase()
         res = (
@@ -79,12 +86,16 @@ async def get_user_ml_profile(
             .maybe_single()
             .execute()
         )
+        duration_ms = (time.perf_counter() - t_start) * 1000
         if res and res.data:
-            return {"profile": res.data}
+            tv = res.data.get("transaction_version", 0)
+            av = res.data.get("analyzed_version", 0)
+            status = res.data.get("analysis_status") or "ready"
+            logger.info(f"[PERF] ML profile returned stored result in {duration_ms:.1f}ms (tv={tv}, av={av}, status={status})")
+            return {"profile": res.data, "status": status}
 
-        # If profile doesn't exist yet, compute it now
-        profile = ml_service.update_user_ml_profile(user_id=user_id, token=token)
-        return {"profile": profile}
+        logger.info(f"[PERF] ML profile not found for user {user_id} in {duration_ms:.1f}ms")
+        return {"profile": None, "status": "empty"}
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -99,14 +110,29 @@ async def get_user_forecast(
 ):
     """
     Retrieve Stage A Hybrid Forecast & Stage B Groq Financial Reasoning for the authenticated user.
-    Uses authenticated user's debit transactions from Supabase.
-    Returns calibrated ML prediction, statistical baseline, reliability rating,
-    confidence score (0-100), trend, confirmed vs possible recurring signals, and AI reasoning.
+    Prefers stored/cached forecast from user_ml_profiles.
     """
+    t_start = time.perf_counter()
     token = authorization.split("Bearer ")[1].strip() if authorization else None
     try:
+        client = _get_supabase()
+        prof_res = (
+            client
+            .from_("user_ml_profiles")
+            .select("forecast_features, updated_at, transaction_version, analyzed_version")
+            .eq("user_id", user_id)
+            .maybe_single()
+            .execute()
+        )
+        if prof_res and prof_res.data and prof_res.data.get("forecast_features"):
+            duration_ms = (time.perf_counter() - t_start) * 1000
+            logger.info(f"[PERF] User forecast returned stored result in {duration_ms:.1f}ms")
+            return {"forecast": prof_res.data["forecast_features"]}
+
         from services import forecast_service
         forecast_data = forecast_service.get_user_hybrid_forecast(user_id=user_id, token=token)
+        duration_ms = (time.perf_counter() - t_start) * 1000
+        logger.info(f"[PERF] User forecast computed on-demand in {duration_ms:.1f}ms")
         return {"forecast": forecast_data}
     except Exception as e:
         raise HTTPException(

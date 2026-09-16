@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Card from '../components/Card';
 import Spinner from '../components/Spinner';
-import { getUserForecast } from '../services/api';
+import { getCachedForecast } from '../services/queryCache';
 import { fetchTransactions } from '../services/transactionService';
 import { formatCurrency } from '../utils/constants';
 import {
@@ -31,15 +31,14 @@ export default function Forecast() {
   const [forecastData, setForecastData] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const loadForecast = async () => {
-    setLoading(true);
+  const loadForecast = async (force = false) => {
     try {
-      const [txs, foreRes] = await Promise.all([
-        fetchTransactions({ limit: 500 }),
-        getUserForecast().catch(() => ({ data: { forecast: null } })),
+      const [txs, forecast] = await Promise.all([
+        fetchTransactions({ limit: 500, force }),
+        getCachedForecast(force).catch(() => null),
       ]);
       setStoredTxs(txs || []);
-      setForecastData(foreRes?.data?.forecast || null);
+      setForecastData(forecast || null);
     } catch (e) {
       console.error('Failed to load forecast data:', e);
     } finally {
@@ -48,7 +47,11 @@ export default function Forecast() {
   };
 
   useEffect(() => {
-    loadForecast();
+    loadForecast(false);
+
+    const handleUpdate = () => loadForecast(true);
+    window.addEventListener('eb:transactions-updated', handleUpdate);
+    return () => window.removeEventListener('eb:transactions-updated', handleUpdate);
   }, []);
 
   const debitTxs = storedTxs.filter((t) => (t.transaction_type || 'debit').toLowerCase() === 'debit');
@@ -57,7 +60,7 @@ export default function Forecast() {
 
   if (loading) {
     return (
-      <div className="page">
+      <div className="page forecast-page">
         <div className="page-header">
           <div>
             <h1 className="page-title">Expense Forecast</h1>
@@ -74,7 +77,7 @@ export default function Forecast() {
 
   if (!hasData) {
     return (
-      <div className="page">
+      <div className="page forecast-page">
         <div className="page-header">
           <div>
             <h1 className="page-title">Expense Forecast</h1>
@@ -152,7 +155,7 @@ export default function Forecast() {
   const RelIcon = relBadge.icon;
 
   return (
-    <div className="page">
+    <div className="page forecast-page">
       <div className="page-header">
         <div>
           <h1 className="page-title">Expense Forecast</h1>

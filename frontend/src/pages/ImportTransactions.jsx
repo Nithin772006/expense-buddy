@@ -12,6 +12,7 @@ import ImportSummary from '../components/ImportSummary';
 import Spinner from '../components/Spinner';
 import { supabase } from '../lib/supabaseClient';
 import { parseFile, parseExcelSheet, confirmImport, getImportHistory } from '../services/importApi';
+import { invalidateUserData } from '../services/queryCache';
 
 // ── Stages ────────────────────────────────────────────────────────────────
 const STAGE = {
@@ -170,6 +171,7 @@ export default function ImportTransactions() {
       clearInterval(progressInterval);
       setProgress(100);
       setImportSummary(summary);
+      invalidateUserData(userId);
       setStage(STAGE.DONE);
       loadHistory(userId);
     } catch (err) {
@@ -194,7 +196,7 @@ export default function ImportTransactions() {
 
   // ── Render ────────────────────────────────────────────────────────────
   return (
-    <div className="page">
+    <div className="page import-page">
       <div className="page-header">
         <div>
           <h1 className="page-title">Import Transactions</h1>

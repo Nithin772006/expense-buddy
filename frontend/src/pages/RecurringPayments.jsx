@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import Card from '../components/Card';
 import Spinner from '../components/Spinner';
 import {
-  getRecurringPayments,
   triggerRecurringDetection,
   confirmRecurringPayment,
   dismissRecurringPayment,
@@ -12,7 +11,11 @@ import {
   markRecurringPaymentPaid,
   getPaymentCycleHistory,
 } from '../services/api';
+import { getCachedRecurringPayments } from '../services/queryCache';
 import { formatCurrency } from '../utils/constants';
+
+// ... icons ...
+
 import {
   CalendarClock,
   CheckCircle2,
@@ -59,10 +62,10 @@ export default function RecurringPayments() {
     notes: '',
   });
 
-  const loadData = async () => {
+  const loadData = async (force = false) => {
     try {
-      const res = await getRecurringPayments();
-      setData(res.data);
+      const cached = await getCachedRecurringPayments(force);
+      setData(cached);
     } catch (err) {
       console.error('Failed to load recurring payments:', err);
     } finally {
@@ -72,14 +75,18 @@ export default function RecurringPayments() {
   };
 
   useEffect(() => {
-    loadData();
+    loadData(false);
+
+    const handleUpdate = () => loadData(true);
+    window.addEventListener('eb:transactions-updated', handleUpdate);
+    return () => window.removeEventListener('eb:transactions-updated', handleUpdate);
   }, []);
 
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
       await triggerRecurringDetection();
-      await loadData();
+      await loadData(true);
     } catch (err) {
       console.error('Failed to refresh detection:', err);
       setRefreshing(false);
@@ -179,7 +186,7 @@ export default function RecurringPayments() {
 
   if (loading) {
     return (
-      <div className="page">
+      <div className="page recurring-page">
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
           <Spinner size={36} />
           <p style={{ marginTop: '1rem', color: 'var(--text-2, #476856)', fontWeight: 600 }}>Analyzing recurring commitments &amp; subscriptions...</p>
@@ -268,7 +275,7 @@ export default function RecurringPayments() {
   };
 
   return (
-    <div className="page">
+    <div className="page recurring-page">
       {/* Header */}
       <div className="page-header">
         <div>

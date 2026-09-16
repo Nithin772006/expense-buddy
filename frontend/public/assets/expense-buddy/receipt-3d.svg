@@ -4,10 +4,35 @@
       <stop offset="0%" stop-color="#ffffff" />
       <stop offset="100%" stop-color="#f2f7f4" />
     </linearGradient>
-    <filter id="receiptShadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="8" stdDeviation="7" flood-color="#1b4332" flood-opacity="0.22" />
+    <filter id="receiptShadow" x="0" y="0" width="110" height="140" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="2.5" />
     </filter>
   </defs>
+
+  <!-- 3D Dimensional Base Shadow (follows exact receipt scalloped geometry with zero edge clipping) -->
+  <path d="
+    M 20 18 
+    C 20 13 24 11 29 11 
+    L 81 11 
+    C 86 11 90 13 90 18 
+    L 90 119 
+    L 85 115 L 79 119 L 73 115 L 67 119 L 61 115 L 55 119 L 49 115 L 43 119 L 37 115 L 31 119 L 26 115 L 20 119 
+    Z" 
+    fill="#1b4332" 
+    opacity="0.10" 
+    filter="url(#receiptShadow)" 
+  />
+  <path d="
+    M 19 17 
+    C 19 11 23 9 28.5 9 
+    L 81.5 9 
+    C 87 9 91 11 91 17 
+    L 91 118.5 
+    L 85.5 114.5 L 79.5 118.5 L 73.5 114.5 L 67.5 118.5 L 61.5 114.5 L 55.5 118.5 L 49.5 114.5 L 43.5 118.5 L 37.5 114.5 L 31.5 118.5 L 25.5 114.5 L 19 118.5 
+    Z" 
+    fill="#1b4332" 
+    opacity="0.04" 
+  />
 
   <!-- Main Scalloped Receipt -->
   <path d="
@@ -21,7 +46,6 @@
     fill="url(#receiptBody)" 
     stroke="#d8f3dc" 
     stroke-width="1.5"
-    filter="url(#receiptShadow)" 
   />
 
   <!-- Top Brand Notch / Header -->

@@ -23,8 +23,9 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { purgeAllLocalTransactionCaches } from '../utils/storage';
-import { healthCheck, processUserMl, getRecurringPayments } from '../services/api';
+import { processUserMl } from '../services/api';
 import { fetchTransactions } from '../services/transactionService';
+import { getCachedHealth, getCachedRecurringPayments, queryCache } from '../services/queryCache';
 import { formatCurrency } from '../utils/constants';
 import './TopNavigation.css';
 
@@ -76,7 +77,7 @@ export default function TopNavigation() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Fetch Auth & Data for Notifications & Backend Health
+  // Fetch Auth & Data for Notifications & Backend Health (Using Shared Cache)
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user?.email) setUserEmail(user.email);
@@ -84,12 +85,15 @@ export default function TopNavigation() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUserEmail(session?.user?.email || '');
+      if (!session) {
+        queryCache.clearAll();
+      }
     });
 
-    // Check backend health
-    healthCheck()
+    // Check backend health using 5-minute shared cache
+    getCachedHealth()
       .then((res) => {
-        setIsOnline(res.data?.status === 'healthy');
+        setIsOnline(res?.status === 'healthy');
       })
       .catch(() => setIsOnline(false))
       .finally(() => setCheckingHealth(false));
@@ -97,18 +101,27 @@ export default function TopNavigation() {
     // Load smart notifications
     loadNotifications();
 
-    return () => subscription.unsubscribe();
+    const handleUpdate = () => loadNotifications(true);
+    window.addEventListener('eb:transactions-updated', handleUpdate);
+    window.addEventListener('eb:ml-completed', handleUpdate);
+
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener('eb:transactions-updated', handleUpdate);
+      window.removeEventListener('eb:ml-completed', handleUpdate);
+    };
   }, []);
 
-  const loadNotifications = async () => {
+  const loadNotifications = async (force = false) => {
     try {
-      const [txs, recRes] = await Promise.all([
-        fetchTransactions({ limit: 100 }).catch(() => []),
-        getRecurringPayments().catch(() => ({ data: null })),
+      const [txs, recData] = await Promise.all([
+        fetchTransactions({ limit: 100, force }).catch(() => []),
+        getCachedRecurringPayments(force).catch(() => null),
       ]);
 
       const items = [];
-      const recPayments = recRes?.data?.recurring_payments || [];
+      const recPayments = recData?.recurring_payments || [];
+
 
       // Due soon or overdue bills
       recPayments.forEach((p) => {

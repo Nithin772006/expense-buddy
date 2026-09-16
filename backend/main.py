@@ -1,5 +1,7 @@
+import logging
+import time
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -16,6 +18,8 @@ from routers.ml_router import router as ml_router
 from routers.recurring_router import router as recurring_router
 
 load_dotenv()
+perf_logger = logging.getLogger("expense_buddy.perf")
+logging.basicConfig(level=logging.INFO)
 
 # Load models on startup
 @asynccontextmanager
@@ -40,6 +44,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add performance logging middleware
+@app.middleware("http")
+async def perf_timing_middleware(request: Request, call_next):
+    start = time.perf_counter()
+    response = await call_next(request)
+    duration_ms = (time.perf_counter() - start) * 1000
+    path = request.url.path
+    if path != "/docs" and not path.startswith("/openapi"):
+        perf_logger.info(f"[PERF] {request.method} {path} completed in {duration_ms:.1f}ms (status {response.status_code})")
+    return response
+
 
 # Register routers
 app.include_router(import_router)

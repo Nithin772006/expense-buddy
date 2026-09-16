@@ -1,11 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="100%" height="100%">
   <defs>
-    <filter id="donutShadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#143d30" flood-opacity="0.2" />
+    <filter id="donutShadow" x="0" y="0" width="120" height="120" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="2.2" />
     </filter>
   </defs>
   
-  <g filter="url(#donutShadow)" transform="rotate(-90 60 60)">
+  <!-- 3D Dimensional Base Shadow (circular donut shadow with zero edge clipping) -->
+  <circle cx="60" cy="62.5" r="41" fill="none" stroke="#143d30" stroke-width="14" opacity="0.10" filter="url(#donutShadow)" />
+  <circle cx="60" cy="61" r="42" fill="none" stroke="#143d30" stroke-width="15" opacity="0.04" />
+
+  <g transform="rotate(-90 60 60)">
     <!-- Circumference of r=36 is 2 * PI * 36 ≈ 226.2 -->
     <!-- Slice 1: Emerald/Forest 28% (stroke-dasharray: 63.3 162.9) -->
     <circle cx="60" cy="60" r="36" fill="transparent" stroke="#2d6a4f" stroke-width="16"

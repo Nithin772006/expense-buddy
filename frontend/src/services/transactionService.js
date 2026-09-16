@@ -6,30 +6,38 @@
 
 import { supabase } from '../lib/supabaseClient';
 import { triggerRecurringDetection } from './api';
+import { queryCache, invalidateUserData } from './queryCache';
 
 /**
- * Fetch all transactions for the current user from Supabase.
- * Returns them newest-first. Falls back to [] on error.
+ * Fetch all transactions for the current user from Supabase with query caching.
+ * Deduplicates in-flight requests and caches for fast navigation.
  */
-export async function fetchTransactions({ limit = 500 } = {}) {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return [];
+export async function fetchTransactions({ limit = 500, force = false } = {}) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const userId = session?.user?.id;
+  if (!userId) return [];
 
-  const { data, error } = await supabase
-    .from('transactions')
-    .select('*')
-    .eq('user_id', user.id)
-    .order('transaction_date', { ascending: false })
-    .order('created_at', { ascending: false })
-    .limit(limit);
+  return queryCache.fetch(
+    ['transactions', userId, limit],
+    async () => {
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('user_id', userId)
+        .order('transaction_date', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(limit);
 
-  if (error) {
-    console.error('fetchTransactions error:', error);
-    return [];
-  }
+      if (error) {
+        console.error('fetchTransactions error:', error);
+        return [];
+      }
 
-  // Normalize to the shape the existing UI components expect
-  return (data || []).map(normalizeForUI);
+      return (data || []).map(normalizeForUI);
+    },
+    3 * 60 * 1000,
+    force
+  );
 }
 
 /**
@@ -69,6 +77,9 @@ export async function saveTransactionToSupabase(tx) {
     throw error;
   }
 
+  // Invalidate cached queries for this user so views update with fresh data
+  invalidateUserData(user.id);
+
   // Trigger recurring payment detection sync in the background
   try {
     triggerRecurringDetection().catch(() => {});
@@ -95,6 +106,9 @@ export async function deleteUserTransactions() {
     console.error('deleteUserTransactions error:', error);
     throw error;
   }
+
+  // Invalidate cached user queries
+  invalidateUserData(user.id);
 }
 
 /**

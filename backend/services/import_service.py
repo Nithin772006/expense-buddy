@@ -264,12 +264,12 @@ def confirm_import(
         } if (error_rows or batch_errors) else None,
     }).eq("id", import_id).execute()
 
-    # 7. Refresh user ML profile (cluster & forecast)
+    # 7. Refresh user ML profile (cluster & forecast) and bump version
     try:
         from services import ml_service
         ml_service.update_user_ml_profile(user_id=user_id, token=token)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[Import] ML profile refresh error: {e}")
 
     # 8. Synchronize recurring payments and reminder statuses
     try:
@@ -277,6 +277,7 @@ def confirm_import(
         recurring_reminder_service.sync_user_recurring_payments(user_id=user_id, token=token)
     except Exception as e:
         print(f"[Import] Recurring payments sync error: {e}")
+
 
     return {
         "import_id":       import_id,

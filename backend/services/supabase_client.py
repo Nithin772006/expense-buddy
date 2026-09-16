@@ -58,24 +58,57 @@ def get_supabase_client(token: Optional[str] = None) -> Client:
         client.postgrest.auth(token)
     return client
 
+import hashlib
+import time
+from threading import Lock
+
+_AUTH_CACHE: dict[str, dict] = {}
+_AUTH_LOCK = Lock()
+_AUTH_CACHE_TTL = 60  # seconds
+
 def verify_access_token(token: str) -> dict:
     """
     Verify Supabase access token (JWT) using Supabase Auth.
     Returns dict with user id and email if valid, or raises Exception if invalid.
+    Caches valid user verifications for 60 seconds to eliminate redundant HTTP
+    auth calls on concurrent or rapid successive requests.
     """
     if not token or not token.strip():
         raise ValueError("Access token cannot be empty.")
     
+    clean_token = token.strip()
+    token_hash = hashlib.sha256(clean_token.encode("utf-8")).hexdigest()
+    now = time.time()
+
+    with _AUTH_LOCK:
+        cached = _AUTH_CACHE.get(token_hash)
+        if cached and cached["expires_at"] > now:
+            return cached["data"]
+
     url = os.environ.get("SUPABASE_URL")
     key = get_supabase_admin_key()
     client = create_client(url, key)
     
-    user_response = client.auth.get_user(token.strip())
+    user_response = client.auth.get_user(clean_token)
     if not user_response or not user_response.user or not user_response.user.id:
         raise ValueError("Invalid or expired session token.")
     
-    return {
+    user_data = {
         "id": user_response.user.id,
         "email": user_response.user.email,
         "user": user_response.user,
     }
+
+    with _AUTH_LOCK:
+        # Periodic purge if cache grows
+        if len(_AUTH_CACHE) > 500:
+            expired = [k for k, v in _AUTH_CACHE.items() if v["expires_at"] <= now]
+            for k in expired:
+                _AUTH_CACHE.pop(k, None)
+        _AUTH_CACHE[token_hash] = {
+            "expires_at": now + _AUTH_CACHE_TTL,
+            "data": user_data,
+        }
+
+    return user_data
+

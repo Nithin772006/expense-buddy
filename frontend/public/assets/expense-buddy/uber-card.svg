@@ -4,14 +4,17 @@
       <stop offset="0%" stop-color="#ffffff" />
       <stop offset="100%" stop-color="#f0f7f3" />
     </linearGradient>
-    <filter id="pillShadowUber" x="-10%" y="-20%" width="120%" height="150%">
-      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#143d30" flood-opacity="0.14" />
-      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#143d30" flood-opacity="0.08" />
+    <filter id="pillShadowUber" x="0" y="0" width="240" height="76" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="2.2" />
     </filter>
   </defs>
 
+  <!-- 3D Dimensional Base Shadow (follows card's rounded rx="20" silhouette with zero edge clipping) -->
+  <rect x="7" y="7" width="226" height="63" rx="19" fill="#143d30" opacity="0.09" filter="url(#pillShadowUber)" />
+  <rect x="5.5" y="5.5" width="229" height="66" rx="20" fill="#143d30" opacity="0.04" />
+
   <!-- Base Card -->
-  <rect x="4" y="4" width="232" height="68" rx="20" fill="url(#cardBgUber)" stroke="#d8f3dc" stroke-width="1.5" filter="url(#pillShadowUber)" />
+  <rect x="4" y="4" width="232" height="68" rx="20" fill="url(#cardBgUber)" stroke="#d8f3dc" stroke-width="1.5" />
 
   <!-- Uber Icon Container -->
   <rect x="18" y="20" width="36" height="36" rx="12" fill="#000000" />

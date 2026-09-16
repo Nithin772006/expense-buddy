@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from services.supabase_client import get_supabase_client, verify_access_token
 from services.recurring_reminder_service import (
+    get_stored_recurring_payments,
     sync_user_recurring_payments,
     manual_mark_paid,
 )
@@ -51,17 +52,17 @@ class MarkPaidRequest(BaseModel):
     notes: Optional[str] = Field(None, description="Optional note for this billing cycle")
 
 
-# ── Endpoints ────────────────────────────────────────────────────────────────
+# ── Read-Only GET Endpoints ──────────────────────────────────────────────────
 
 @router.get("")
 async def get_recurring_payments(auth: tuple[str, str] = Depends(get_current_auth)):
     """
-    Fetch all recurring payments and possible patterns for the authenticated user,
-    with full summary statistics and current billing cycle status badges.
+    Fetch all stored recurring payments and billing cycle status for authenticated user.
+    Pure read-only endpoint: ZERO database writes / updates.
     """
     user_id, token = auth
     try:
-        data = sync_user_recurring_payments(user_id=user_id, token=token)
+        data = get_stored_recurring_payments(user_id=user_id, token=token)
         return data
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch recurring payments: {str(e)}")
@@ -70,11 +71,11 @@ async def get_recurring_payments(auth: tuple[str, str] = Depends(get_current_aut
 @router.get("/summary")
 async def get_recurring_summary(auth: tuple[str, str] = Depends(get_current_auth)):
     """
-    Return high-level summary counts (active count, monthly total, due soon, due today, overdue, paid).
+    Return high-level summary counts from stored recurring payments (read-only).
     """
     user_id, token = auth
     try:
-        data = sync_user_recurring_payments(user_id=user_id, token=token)
+        data = get_stored_recurring_payments(user_id=user_id, token=token)
         return data.get("summary", {})
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch recurring summary: {str(e)}")
@@ -83,11 +84,11 @@ async def get_recurring_summary(auth: tuple[str, str] = Depends(get_current_auth
 @router.get("/upcoming")
 async def get_upcoming_payments(auth: tuple[str, str] = Depends(get_current_auth)):
     """
-    Return active recurring commitments that are UPCOMING or DUE_SOON.
+    Return active recurring commitments that are UPCOMING or DUE_SOON (read-only).
     """
     user_id, token = auth
     try:
-        data = sync_user_recurring_payments(user_id=user_id, token=token)
+        data = get_stored_recurring_payments(user_id=user_id, token=token)
         filtered = [
             p for p in data.get("recurring_payments", [])
             if p.get("current_cycle_status") in ("upcoming", "due_soon")
@@ -100,11 +101,11 @@ async def get_upcoming_payments(auth: tuple[str, str] = Depends(get_current_auth
 @router.get("/due")
 async def get_due_payments(auth: tuple[str, str] = Depends(get_current_auth)):
     """
-    Return active recurring commitments that are DUE_SOON or DUE_TODAY.
+    Return active recurring commitments that are DUE_SOON or DUE_TODAY (read-only).
     """
     user_id, token = auth
     try:
-        data = sync_user_recurring_payments(user_id=user_id, token=token)
+        data = get_stored_recurring_payments(user_id=user_id, token=token)
         filtered = [
             p for p in data.get("recurring_payments", [])
             if p.get("current_cycle_status") in ("due_soon", "due_today")
@@ -117,11 +118,11 @@ async def get_due_payments(auth: tuple[str, str] = Depends(get_current_auth)):
 @router.get("/overdue")
 async def get_overdue_payments(auth: tuple[str, str] = Depends(get_current_auth)):
     """
-    Return active recurring commitments that are OVERDUE or MISSED.
+    Return active recurring commitments that are OVERDUE or MISSED (read-only).
     """
     user_id, token = auth
     try:
-        data = sync_user_recurring_payments(user_id=user_id, token=token)
+        data = get_stored_recurring_payments(user_id=user_id, token=token)
         filtered = [
             p for p in data.get("recurring_payments", [])
             if p.get("current_cycle_status") in ("overdue", "missed")
@@ -129,6 +130,7 @@ async def get_overdue_payments(auth: tuple[str, str] = Depends(get_current_auth)
         return {"overdue_payments": filtered}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @router.get("/{payment_id}/history")

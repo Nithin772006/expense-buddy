@@ -54,7 +54,7 @@ export default function Settings() {
   const totalModels = health ? Object.keys(health.services).length : 4;
 
   return (
-    <div className="page">
+    <div className="page settings-page">
       <div className="page-header">
         <div>
           <h1 className="page-title">Settings</h1>

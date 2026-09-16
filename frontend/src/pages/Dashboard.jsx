@@ -31,8 +31,13 @@ import AIInsights from '../components/AIInsights';
 import CategoryChart from '../components/CategoryChart';
 import SpendingChart from '../components/SpendingChart';
 import Spinner from '../components/Spinner';
-import { healthCheck, getUserMlProfile, processUserMl, getRecurringPayments } from '../services/api';
+import { processUserMl } from '../services/api';
 import { fetchTransactions } from '../services/transactionService';
+import {
+  getCachedHealth,
+  getCachedMlProfile,
+  getCachedRecurringPayments,
+} from '../services/queryCache';
 import { formatCurrency } from '../utils/constants';
 
 /* ── AI Model definitions (static metadata) ── */
@@ -76,16 +81,18 @@ export default function Dashboard() {
   const [mlProcessing, setMlProcessing]   = useState(false);
   const [mlStatusMessage, setMlStatusMessage] = useState('');
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (force = false) => {
     try {
-      const [txs, profRes, recRes] = await Promise.all([
-        fetchTransactions({ limit: 500 }),
-        getUserMlProfile().catch(() => ({ data: { profile: null } })),
-        getRecurringPayments().catch(() => ({ data: null })),
+      const [hData, txs, profData, recData] = await Promise.all([
+        getCachedHealth(force).catch(() => null),
+        fetchTransactions({ limit: 500, force }).catch(() => []),
+        getCachedMlProfile(force).catch(() => null),
+        getCachedRecurringPayments(force).catch(() => null),
       ]);
+      setHealth(hData);
       setTransactions(txs || []);
-      setMlProfile(profRes?.data?.profile || null);
-      setRecurringData(recRes?.data || null);
+      setMlProfile(profData || null);
+      setRecurringData(recData || null);
     } catch (e) {
       console.error('Failed to load dashboard data:', e);
     } finally {
@@ -94,16 +101,16 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    healthCheck()
-      .then((res) => setHealth(res.data))
-      .catch(() => setHealth(null));
+    loadData(false);
 
-    loadData();
-
-    // Listen for AI analysis trigger from top navigation
-    const handleMlCompleted = () => loadData();
-    window.addEventListener('eb:ml-completed', handleMlCompleted);
-    return () => window.removeEventListener('eb:ml-completed', handleMlCompleted);
+    // Listen for AI analysis trigger and transaction updates
+    const handleRefresh = () => loadData(true);
+    window.addEventListener('eb:ml-completed', handleRefresh);
+    window.addEventListener('eb:transactions-updated', handleRefresh);
+    return () => {
+      window.removeEventListener('eb:ml-completed', handleRefresh);
+      window.removeEventListener('eb:transactions-updated', handleRefresh);
+    };
   }, [loadData]);
 
   const handleRunMl = async () => {
@@ -152,7 +159,7 @@ export default function Dashboard() {
   const confirmedPayments = recurringData?.recurring_payments || [];
 
   return (
-    <div className="page">
+    <div className="page dashboard-page">
       {/* ── Page Header ── */}
       <div className="page-header">
         <div>
@@ -334,21 +341,21 @@ export default function Dashboard() {
           </Card>
 
           {/* ── Quick Actions Ribbon ── */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '24px' }}>
-            <Link to="/add-expense" className="btn-secondary" style={{ padding: '12px 16px', justifyContent: 'flex-start', background: '#ffffff' }}>
-              <PlusCircle size={16} style={{ color: '#2d6a4f' }} />
+          <div className="quick-actions-grid">
+            <Link to="/add-expense" className="quick-action-btn">
+              <PlusCircle size={16} style={{ color: '#2d6a4f', flexShrink: 0 }} />
               <span>Add Expense</span>
             </Link>
-            <Link to="/import-transactions" className="btn-secondary" style={{ padding: '12px 16px', justifyContent: 'flex-start', background: '#ffffff' }}>
-              <Upload size={16} style={{ color: '#2d6a4f' }} />
+            <Link to="/import-transactions" className="quick-action-btn">
+              <Upload size={16} style={{ color: '#2d6a4f', flexShrink: 0 }} />
               <span>Import Transactions</span>
             </Link>
-            <Link to="/spending-analysis" className="btn-secondary" style={{ padding: '12px 16px', justifyContent: 'flex-start', background: '#ffffff' }}>
-              <BarChart3 size={16} style={{ color: '#2d6a4f' }} />
+            <Link to="/spending-analysis" className="quick-action-btn">
+              <BarChart3 size={16} style={{ color: '#2d6a4f', flexShrink: 0 }} />
               <span>Spending Analysis</span>
             </Link>
-            <Link to="/forecast" className="btn-secondary" style={{ padding: '12px 16px', justifyContent: 'flex-start', background: '#ffffff' }}>
-              <TrendingUp size={16} style={{ color: '#2d6a4f' }} />
+            <Link to="/forecast" className="quick-action-btn">
+              <TrendingUp size={16} style={{ color: '#2d6a4f', flexShrink: 0 }} />
               <span>View Forecast</span>
             </Link>
           </div>

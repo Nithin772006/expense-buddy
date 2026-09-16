@@ -9,7 +9,9 @@ Orchestrates all 4 trained ML models on real user transaction data:
 """
 
 import logging
+import time
 from datetime import datetime, timezone
+from threading import Lock
 from typing import Optional
 import numpy as np
 
@@ -23,6 +25,18 @@ from services.supabase_client import get_supabase_client
 
 logger = logging.getLogger("expense_buddy.ml")
 logging.basicConfig(level=logging.INFO)
+
+_ACTIVE_ML_JOBS: set[str] = set()
+_ML_JOBS_LOCK = Lock()
+
+def get_user_transaction_dataset_version(transactions: list[dict]) -> int:
+    """Deterministic version based on transaction count and timestamp."""
+    count = len(transactions)
+    if count == 0:
+        return 0
+    latest = transactions[-1].get("created_at") or transactions[-1].get("transaction_date") or ""
+    return count + (abs(hash(str(latest))) % 1000000)
+
 
 CLUSTER_METADATA = {
     0: {
@@ -224,147 +238,177 @@ def process_user_transactions(
     Returns processing metrics.
     """
     logger.info(f"[ML] Processing started for user_id={user_id} (force={force_recompute})")
-    client = get_supabase_client(token)
+    with _ML_JOBS_LOCK:
+        if user_id in _ACTIVE_ML_JOBS:
+            logger.info(f"[ML] Analysis job already in progress for user {user_id}. Skipping duplicate trigger.")
+            return {
+                "status": "processing",
+                "message": "Analysis is currently processing in background.",
+                "processed_transactions": 0,
+            }
+        _ACTIVE_ML_JOBS.add(user_id)
 
-    # 1. Fetch transactions
-    response = (
-        client
-        .from_("transactions")
-        .select("*")
-        .eq("user_id", user_id)
-        .order("transaction_date", desc=False)
-        .execute()
-    )
-    transactions = response.data or []
-    total_tx_count = len(transactions)
+    t_start = time.perf_counter()
+    try:
+        client = get_supabase_client(token)
 
-    if total_tx_count == 0:
-        return {
-            "processed_transactions": 0,
-            "total_transactions": 0,
-            "classified": 0,
-            "anomalies_detected": 0,
-            "cluster": None,
-            "cluster_label": None,
-            "forecast": {"available": False, "reason": "No transactions found."},
+        # 1. Fetch transactions
+        response = (
+            client
+            .from_("transactions")
+            .select("*")
+            .eq("user_id", user_id)
+            .order("transaction_date", desc=False)
+            .execute()
+        )
+        transactions = response.data or []
+        total_tx_count = len(transactions)
+        tx_version = get_user_transaction_dataset_version(transactions)
+
+        if total_tx_count == 0:
+            return {
+                "processed_transactions": 0,
+                "total_transactions": 0,
+                "classified": 0,
+                "anomalies_detected": 0,
+                "cluster": None,
+                "cluster_label": None,
+                "forecast": {"available": False, "reason": "No transactions found."},
+                "transaction_version": 0,
+                "analyzed_version": 0,
+                "status": "ready",
+            }
+
+        # Calculate user baseline stats for anomaly detection
+        amounts = [float(t.get("amount") or 0.0) for t in transactions]
+        user_stats = {
+            "avg_amount": float(np.mean(amounts)) if amounts else 0.0,
+            "std_amount": float(np.std(amounts)) if len(amounts) > 1 else 0.0,
+            "count": total_tx_count,
         }
 
+        # 2. Identify rows needing classification or anomaly detection
+        classified_count = 0
+        anomalies_detected = 0
+        updated_rows = []
 
-    # Calculate user baseline stats for anomaly detection
-    amounts = [float(t.get("amount") or 0.0) for t in transactions]
-    user_stats = {
-        "avg_amount": float(np.mean(amounts)) if amounts else 0.0,
-        "std_amount": float(np.std(amounts)) if len(amounts) > 1 else 0.0,
-        "count": total_tx_count,
-    }
+        for tx in transactions:
+            tx_id = tx["id"]
+            category = tx.get("category")
+            confidence = tx.get("classification_confidence")
+            is_anomaly = tx.get("is_anomaly")
 
-    # 2. Identify rows needing classification or anomaly detection
-    classified_count = 0
-    anomalies_detected = 0
-    updated_rows = []
+            needs_classification = (
+                force_recompute
+                or not category
+                or category.strip().lower() == "uncategorized"
+                or confidence is None
+            )
+            needs_anomaly = force_recompute or is_anomaly is None
 
-    for tx in transactions:
-        tx_id = tx["id"]
-        category = tx.get("category")
-        confidence = tx.get("classification_confidence")
-        is_anomaly = tx.get("is_anomaly")
+            updates = {}
+            if needs_classification:
+                new_cat, new_conf = classify_transaction(tx.get("description", ""), category)
+                updates["category"] = new_cat
+                if new_conf is not None:
+                    updates["classification_confidence"] = new_conf
+                classified_count += 1
+            else:
+                new_cat = category
 
-        needs_classification = (
-            force_recompute
-            or not category
-            or category.strip().lower() == "uncategorized"
-            or confidence is None
-        )
-        needs_anomaly = force_recompute or is_anomaly is None
-
-        updates = {}
-        if needs_classification:
-            new_cat, new_conf = classify_transaction(tx.get("description", ""), category)
-            updates["category"] = new_cat
-            if new_conf is not None:
-                updates["classification_confidence"] = new_conf
-            classified_count += 1
-        else:
-            new_cat = category
-
-        if needs_anomaly:
-            anomaly_flag = detect_transaction_anomaly(tx, user_stats)
-            updates["is_anomaly"] = anomaly_flag
-            # Keep anomaly_score NULL per requirement since existing model produces binary status
-            updates["anomaly_score"] = None
-            if anomaly_flag:
+            if needs_anomaly:
+                anomaly_flag = detect_transaction_anomaly(tx, user_stats)
+                updates["is_anomaly"] = anomaly_flag
+                updates["anomaly_score"] = None
+                if anomaly_flag:
+                    anomalies_detected += 1
+            elif is_anomaly:
                 anomalies_detected += 1
-        elif is_anomaly:
-            anomalies_detected += 1
 
-        if updates:
-            updates["id"] = tx_id
-            updates["updated_at"] = datetime.now(timezone.utc).isoformat()
-            updated_rows.append(updates)
+            if updates:
+                updates["id"] = tx_id
+                updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+                updated_rows.append(updates)
 
-    # 3. Update transaction rows in Supabase
-    if updated_rows:
-        logger.info(f"[ML] Updating {len(updated_rows)} transaction records in Supabase")
-        for chunk_start in range(0, len(updated_rows), 50):
-            chunk = updated_rows[chunk_start : chunk_start + 50]
-            for row in chunk:
-                r_id = row["id"]
-                data = {k: v for k, v in row.items() if k != "id"}
-                client.from_("transactions").update(data).eq("id", r_id).execute()
+        # 3. Update transaction rows in Supabase
+        if updated_rows:
+            logger.info(f"[ML] Updating {len(updated_rows)} transaction records in Supabase")
+            for chunk_start in range(0, len(updated_rows), 50):
+                chunk = updated_rows[chunk_start : chunk_start + 50]
+                for row in chunk:
+                    r_id = row["id"]
+                    data = {k: v for k, v in row.items() if k != "id"}
+                    client.from_("transactions").update(data).eq("id", r_id).execute()
 
-    logger.info(f"[ML] Classification completed: {classified_count} transactions")
-    logger.info(f"[ML] Anomaly detection completed: {anomalies_detected} anomalies")
+        # 4. Compute User-Level Spending Cluster
+        cluster_result = compute_user_spending_cluster(transactions)
 
-    # 4. Compute User-Level Spending Cluster
-    cluster_result = compute_user_spending_cluster(transactions)
+        # 5. Compute User-Level Forecast
+        forecast_result = compute_user_expense_forecast(transactions)
 
-    # 5. Compute User-Level Forecast
-    forecast_result = compute_user_expense_forecast(transactions)
+        # 6. Upsert user_ml_profiles with versioning
+        total_spend = sum(float(t.get("amount") or 0.0) for t in transactions if (t.get("transaction_type") or "debit").lower() == "debit")
+        profile_data = {
+            "user_id": user_id,
+            "total_transactions": total_tx_count,
+            "total_spending": round(total_spend, 2),
+            "transaction_version": tx_version,
+            "analyzed_version": tx_version,
+            "analysis_status": "ready",
+            "last_processed_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
 
-    # 6. Upsert user_ml_profiles
-    total_spend = sum(float(t.get("amount") or 0.0) for t in transactions if (t.get("transaction_type") or "debit").lower() == "debit")
-    profile_data = {
-        "user_id": user_id,
-        "total_transactions": total_tx_count,
-        "total_spending": round(total_spend, 2),
-        "last_processed_at": datetime.now(timezone.utc).isoformat(),
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    }
+        if cluster_result:
+            profile_data["cluster"] = cluster_result["cluster"]
+            profile_data["cluster_label"] = cluster_result["cluster_label"]
+            profile_data["cluster_description"] = cluster_result["cluster_description"]
+            profile_data["features_snapshot"] = cluster_result["features_snapshot"]
 
-    if cluster_result:
-        profile_data["cluster"] = cluster_result["cluster"]
-        profile_data["cluster_label"] = cluster_result["cluster_label"]
-        profile_data["cluster_description"] = cluster_result["cluster_description"]
-        profile_data["features_snapshot"] = cluster_result["features_snapshot"]
+        if forecast_result:
+            profile_data["forecasted_amount"] = forecast_result.get("ml_prediction")
+            profile_data["forecast_features"] = forecast_result
 
-    if forecast_result:
-        profile_data["forecasted_amount"] = forecast_result.get("ml_prediction")
-        profile_data["forecast_features"] = forecast_result
+        try:
+            client.from_("user_ml_profiles").upsert(profile_data).execute()
+            logger.info(f"[ML] user_ml_profiles updated for user_id={user_id} (version={tx_version})")
+        except Exception as e:
+            logger.error(f"[ML] Error upserting user_ml_profiles: {e}")
 
-    try:
-        client.from_("user_ml_profiles").upsert(profile_data).execute()
-        logger.info(f"[ML] user_ml_profiles updated for user_id={user_id}")
-    except Exception as e:
-        logger.error(f"[ML] Error upserting user_ml_profiles: {e}")
+        duration_ms = (time.perf_counter() - t_start) * 1000
+        logger.info(f"[PERF] process_user_transactions completed in {duration_ms:.1f}ms (tv={tx_version}, av={tx_version})")
 
-    return {
-        "processed_transactions": len(updated_rows),
-        "total_transactions": total_tx_count,
-        "classified": classified_count,
-        "anomalies_detected": anomalies_detected,
-        "cluster": cluster_result["cluster"] if cluster_result else None,
-        "cluster_label": cluster_result["cluster_label"] if cluster_result else None,
-        "cluster_description": cluster_result["cluster_description"] if cluster_result else None,
-        "forecast": forecast_result,
-    }
+        return {
+            "processed_transactions": len(updated_rows),
+            "total_transactions": total_tx_count,
+            "classified": classified_count,
+            "anomalies_detected": anomalies_detected,
+            "cluster": cluster_result["cluster"] if cluster_result else None,
+            "cluster_label": cluster_result["cluster_label"] if cluster_result else None,
+            "cluster_description": cluster_result["cluster_description"] if cluster_result else None,
+            "forecast": forecast_result,
+            "transaction_version": tx_version,
+            "analyzed_version": tx_version,
+            "status": "ready",
+        }
+    finally:
+        with _ML_JOBS_LOCK:
+            _ACTIVE_ML_JOBS.discard(user_id)
 
 
 def update_user_ml_profile(user_id: str, token: Optional[str] = None) -> Optional[dict]:
     """
     Lightweight user profile refresh: re-computes cluster & forecast
     without re-evaluating each individual transaction.
-    Ideal for invoking right after a statement import.
+    Ideal for invoking right after a statement import or transaction mutation.
     """
+    with _ML_JOBS_LOCK:
+        if user_id in _ACTIVE_ML_JOBS:
+            logger.info(f"[ML] Profile update already in progress for user {user_id}. Skipping.")
+            return None
+        _ACTIVE_ML_JOBS.add(user_id)
+
+    t_start = time.perf_counter()
     try:
         client = get_supabase_client(token)
         response = (
@@ -379,6 +423,7 @@ def update_user_ml_profile(user_id: str, token: Optional[str] = None) -> Optiona
         if not transactions:
             return None
 
+        tx_version = get_user_transaction_dataset_version(transactions)
         cluster_result = compute_user_spending_cluster(transactions)
         forecast_result = compute_user_expense_forecast(transactions)
         total_spend = sum(float(t.get("amount") or 0.0) for t in transactions if (t.get("transaction_type") or "debit").lower() == "debit")
@@ -387,6 +432,9 @@ def update_user_ml_profile(user_id: str, token: Optional[str] = None) -> Optiona
             "user_id": user_id,
             "total_transactions": len(transactions),
             "total_spending": round(total_spend, 2),
+            "transaction_version": tx_version,
+            "analyzed_version": tx_version,
+            "analysis_status": "ready",
             "last_processed_at": datetime.now(timezone.utc).isoformat(),
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -400,7 +448,13 @@ def update_user_ml_profile(user_id: str, token: Optional[str] = None) -> Optiona
             profile_data["forecast_features"] = forecast_result
 
         client.from_("user_ml_profiles").upsert(profile_data).execute()
+        duration_ms = (time.perf_counter() - t_start) * 1000
+        logger.info(f"[PERF] update_user_ml_profile completed in {duration_ms:.1f}ms (tv={tx_version}, av={tx_version})")
         return profile_data
     except Exception as e:
         logger.error(f"[ML] update_user_ml_profile failed for {user_id}: {e}")
         return None
+    finally:
+        with _ML_JOBS_LOCK:
+            _ACTIVE_ML_JOBS.discard(user_id)
+

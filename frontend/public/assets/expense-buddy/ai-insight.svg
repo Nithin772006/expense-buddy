@@ -4,13 +4,17 @@
       <stop offset="0%" stop-color="#ffffff" />
       <stop offset="100%" stop-color="#f0f7f3" />
     </linearGradient>
-    <filter id="aiShadow" x="-10%" y="-20%" width="120%" height="150%">
-      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#143d30" flood-opacity="0.14" />
+    <filter id="aiShadow" x="0" y="0" width="210" height="72" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="2" />
     </filter>
   </defs>
 
+  <!-- 3D Dimensional Base Shadow (follows card's rounded rx="18" silhouette with zero edge clipping) -->
+  <rect x="7" y="6.5" width="196" height="60" rx="17" fill="#143d30" opacity="0.09" filter="url(#aiShadow)" />
+  <rect x="5.5" y="5" width="199" height="62" rx="18" fill="#143d30" opacity="0.04" />
+
   <!-- Base Card -->
-  <rect x="4" y="4" width="202" height="64" rx="18" fill="url(#aiCardBg)" stroke="#d8f3dc" stroke-width="1.5" filter="url(#aiShadow)" />
+  <rect x="4" y="4" width="202" height="64" rx="18" fill="url(#aiCardBg)" stroke="#d8f3dc" stroke-width="1.5" />
 
   <!-- AI Brain / Chip Icon -->
   <rect x="16" y="16" width="40" height="40" rx="12" fill="#d8f3dc" />

@@ -11,6 +11,8 @@ Provides:
 """
 
 from datetime import date, datetime, timedelta
+import logging
+import time
 from typing import Any, Optional
 from dateutil.relativedelta import relativedelta
 
@@ -21,6 +23,9 @@ from services.recurring_payment_service import (
     calculate_next_expected_date,
     parse_tx_date,
 )
+
+logger = logging.getLogger("expense_buddy.recurring")
+
 
 
 REMINDER_WINDOW_DAYS = 7     # Expected within 7 days -> DUE_SOON
@@ -189,18 +194,126 @@ def match_transaction_to_cycle(
     return is_amount_within_tolerance(tx_amount, expected_amount, stability, min_amt, max_amt)
 
 
-# ── Full User Synchronization Engine ─────────────────────────────────────────
+# ── Read-Only Recurring Payments (For Page Navigation) ─────────────────────────
+
+def get_stored_recurring_payments(user_id: str, token: Optional[str] = None) -> dict:
+    """
+    Read-only retrieval of stored recurring payments and billing cycle statuses.
+    Performs ZERO database writes (no PATCH/INSERT/DELETE) for fast page loads.
+    Uses efficient batch queries to prevent N+1 overhead.
+    """
+    t_start = time.perf_counter()
+    client = get_supabase_client(token)
+
+    # 1. Fetch recurring payments for authenticated user
+    rec_resp = (
+        client
+        .from_("recurring_payments")
+        .select("*")
+        .eq("user_id", user_id)
+        .order("next_expected_date", desc=False)
+        .execute()
+    )
+    records = rec_resp.data or []
+
+    if not records:
+        duration_ms = (time.perf_counter() - t_start) * 1000
+        logger.info(f"[PERF] get_stored_recurring_payments: 0 records in {duration_ms:.1f}ms")
+        return {
+            "summary": {
+                "active_count": 0,
+                "total_monthly_commitment": 0.0,
+                "due_soon_count": 0,
+                "due_today_count": 0,
+                "overdue_count": 0,
+                "paid_count": 0,
+            },
+            "recurring_payments": [],
+            "possible_patterns": [],
+        }
+
+    # 2. Batch fetch billing cycle instances for this user in a single roundtrip
+    inst_resp = (
+        client
+        .from_("recurring_payment_instances")
+        .select("*")
+        .eq("user_id", user_id)
+        .execute()
+    )
+    instances = inst_resp.data or []
+    inst_map = {(i["recurring_payment_id"], i["billing_cycle_key"]): i for i in instances}
+
+    today = date.today()
+    due_soon_count = 0
+    due_today_count = 0
+    overdue_count = 0
+    paid_count = 0
+    enriched = []
+
+    for rec in records:
+        freq = rec.get("frequency") or "monthly"
+        exp_date_str = rec.get("next_expected_date")
+        exp_date = datetime.strptime(exp_date_str, "%Y-%m-%d").date() if exp_date_str else today
+        cycle_key = get_billing_cycle_key(exp_date, freq)
+
+        instance = inst_map.get((rec["id"], cycle_key))
+        is_paid = (instance.get("status") == "paid") if instance else False
+
+        current_status = evaluate_reminder_status(exp_date, is_paid=is_paid, today=today)
+
+        # Update summary counters
+        if current_status == "due_soon":
+            due_soon_count += 1
+        elif current_status == "due_today":
+            due_today_count += 1
+        elif current_status in ("overdue", "missed"):
+            overdue_count += 1
+        elif current_status == "paid":
+            paid_count += 1
+
+        rec_copy = dict(rec)
+        rec_copy["current_cycle_status"] = current_status
+        rec_copy["current_cycle_key"] = cycle_key
+        rec_copy["is_paid"] = is_paid
+        if instance:
+            rec_copy["paid_date"] = instance.get("paid_date")
+            rec_copy["actual_amount"] = instance.get("actual_amount")
+            rec_copy["payment_source"] = instance.get("payment_source")
+
+        enriched.append(rec_copy)
+
+    total_monthly = sum(float(x.get("average_amount") or 0.0) for x in enriched if x.get("status") == "active")
+
+    duration_ms = (time.perf_counter() - t_start) * 1000
+    logger.info(f"[PERF] get_stored_recurring_payments: {len(enriched)} records in {duration_ms:.1f}ms (read-only)")
+
+    return {
+        "summary": {
+            "active_count": len([x for x in enriched if x.get("status") == "active"]),
+            "total_monthly_commitment": round(total_monthly, 2),
+            "due_soon_count": due_soon_count,
+            "due_today_count": due_today_count,
+            "overdue_count": overdue_count,
+            "paid_count": paid_count,
+        },
+        "recurring_payments": enriched,
+        "possible_patterns": [],
+    }
+
+
+# ── Full User Synchronization Engine (Event-Driven Pipeline Only) ───────────────
 
 def sync_user_recurring_payments(user_id: str, token: str) -> dict:
     """
     Synchronizes recurring payments for the authenticated user.
-    1. Fetches all user transactions securely using user's RLS token.
-    2. Detects confirmed commitments and possible patterns deterministically.
-    3. Upserts detected commitments into `public.recurring_payments`.
-    4. Manages billing cycle instances in `public.recurring_payment_instances`.
-    5. Matches recent transactions to mark cycles as paid (preventing duplicates).
-    6. Returns structured summary and item lists.
+    CALLED EXCLUSIVELY ON EVENTS:
+    - Post transaction statement import
+    - Manual single transaction add/delete
+    - User explicitly clicks "Refresh Detection"
+    
+    Uses batch operations and only updates records if fields have genuinely changed.
     """
+    t_start = time.perf_counter()
     client = get_supabase_client(token)
 
     # 1. Fetch user transactions
@@ -270,7 +383,14 @@ def sync_user_recurring_payments(user_id: str, token: str) -> dict:
 
         if existing:
             rec_id = existing["id"]
-            client.from_("recurring_payments").update(row_data).eq("id", rec_id).execute()
+            # Only write to DB if relevant fields changed
+            needs_update = any(
+                str(existing.get(k)) != str(row_data[k])
+                for k in ["frequency", "category", "last_paid_date", "next_expected_date", "average_amount", "status"]
+                if k in existing
+            )
+            if needs_update:
+                client.from_("recurring_payments").update(row_data).eq("id", rec_id).execute()
             row_data["id"] = rec_id
         else:
             insert_resp = client.from_("recurring_payments").insert(row_data).execute()
@@ -278,13 +398,24 @@ def sync_user_recurring_payments(user_id: str, token: str) -> dict:
 
         saved_confirmed.append(row_data)
 
-    # 5. Billing cycle instance synchronization & payment matching
+    # 5. Batch-fetch existing instances to eliminate N+1 queries
+    existing_inst_resp = (
+        client
+        .from_("recurring_payment_instances")
+        .select("*")
+        .eq("user_id", user_id)
+        .execute()
+    )
+    instances_by_key = {
+        (i["recurring_payment_id"], i["billing_cycle_key"]): i
+        for i in (existing_inst_resp.data or [])
+    }
+
     today = date.today()
     due_soon_count = 0
     due_today_count = 0
     overdue_count = 0
     paid_count = 0
-
     enriched_confirmed = []
 
     for rec in saved_confirmed:
@@ -294,33 +425,21 @@ def sync_user_recurring_payments(user_id: str, token: str) -> dict:
         exp_date = datetime.strptime(exp_date_str, "%Y-%m-%d").date() if exp_date_str else today
         cycle_key = get_billing_cycle_key(exp_date, freq)
 
-        # Check if instance already exists for this cycle
-        inst_resp = (
-            client
-            .from_("recurring_payment_instances")
-            .select("*")
-            .eq("recurring_payment_id", rec_id)
-            .eq("billing_cycle_key", cycle_key)
-            .execute()
-        )
-        instance = inst_resp.data[0] if inst_resp.data else None
+        instance = instances_by_key.get((rec_id, cycle_key))
 
         # If not paid, attempt matching against transactions
-        is_paid = instance.get("status") == "paid" if instance else False
+        is_paid = (instance.get("status") == "paid") if instance else False
         matched_tx = None
 
         if not is_paid:
-            # Look for transactions around the expected date
             for tx in reversed(transactions):
                 if match_transaction_to_cycle(tx, rec, exp_date):
                     is_paid = True
                     matched_tx = tx
                     break
 
-        # Calculate current status
         current_status = evaluate_reminder_status(exp_date, is_paid=is_paid, today=today)
 
-        # Upsert billing cycle instance
         inst_data = {
             "user_id": user_id,
             "recurring_payment_id": rec_id,
@@ -339,7 +458,14 @@ def sync_user_recurring_payments(user_id: str, token: str) -> dict:
             inst_data["payment_source"] = "auto_detected"
 
         if instance:
-            client.from_("recurring_payment_instances").update(inst_data).eq("id", instance["id"]).execute()
+            # Only update if status or matched details changed
+            needs_inst_update = (
+                instance.get("status") != current_status
+                or instance.get("matched_transaction_id") != inst_data.get("matched_transaction_id")
+                or instance.get("paid_date") != inst_data.get("paid_date")
+            )
+            if needs_inst_update:
+                client.from_("recurring_payment_instances").update(inst_data).eq("id", instance["id"]).execute()
         else:
             client.from_("recurring_payment_instances").insert(inst_data).execute()
 
@@ -352,7 +478,6 @@ def sync_user_recurring_payments(user_id: str, token: str) -> dict:
             overdue_count += 1
         elif current_status == "paid":
             paid_count += 1
-            # Since current cycle is paid, advance the next expected date to the following cycle
             following_cycle_date = calculate_next_expected_date(exp_date, freq)
             rec["next_expected_date"] = following_cycle_date.isoformat()
             if inst_data.get("paid_date"):
@@ -369,6 +494,9 @@ def sync_user_recurring_payments(user_id: str, token: str) -> dict:
         enriched_confirmed.append(rec)
 
     total_monthly = sum(x["average_amount"] for x in enriched_confirmed if x.get("status") == "active")
+
+    duration_ms = (time.perf_counter() - t_start) * 1000
+    logger.info(f"[PERF] sync_user_recurring_payments: synced {len(enriched_confirmed)} commitments in {duration_ms:.1f}ms")
 
     return {
         "summary": {

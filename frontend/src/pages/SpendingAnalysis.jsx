@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import Card from '../components/Card';
 import Spinner from '../components/Spinner';
 import CategoryChart from '../components/CategoryChart';
-import { getUserMlProfile } from '../services/api';
+import { getCachedMlProfile } from '../services/queryCache';
 import { fetchTransactions } from '../services/transactionService';
 import { CLUSTER_LABELS, formatCurrency } from '../utils/constants';
 import {
@@ -26,15 +26,27 @@ export default function SpendingAnalysis() {
   const [mlProfile, setMlProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const loadData = (force = false) => {
     Promise.all([
-      fetchTransactions({ limit: 500 }),
-      getUserMlProfile().catch(() => ({ data: { profile: null } })),
-    ]).then(([txs, profRes]) => {
+      fetchTransactions({ limit: 500, force }),
+      getCachedMlProfile(force).catch(() => null),
+    ]).then(([txs, prof]) => {
       setStoredTxs(txs || []);
-      setMlProfile(profRes?.data?.profile || null);
+      setMlProfile(prof || null);
       setLoading(false);
     });
+  };
+
+  useEffect(() => {
+    loadData(false);
+
+    const handleUpdate = () => loadData(true);
+    window.addEventListener('eb:transactions-updated', handleUpdate);
+    window.addEventListener('eb:ml-completed', handleUpdate);
+    return () => {
+      window.removeEventListener('eb:transactions-updated', handleUpdate);
+      window.removeEventListener('eb:ml-completed', handleUpdate);
+    };
   }, []);
 
   const clusterId = mlProfile?.cluster !== undefined && mlProfile?.cluster !== null ? mlProfile.cluster : null;
@@ -59,7 +71,7 @@ export default function SpendingAnalysis() {
 
   if (loading) {
     return (
-      <div className="page">
+      <div className="page spending-page">
         <div className="page-header">
           <div>
             <h1 className="page-title">Spending Analysis</h1>
@@ -76,7 +88,7 @@ export default function SpendingAnalysis() {
 
   if (!hasData) {
     return (
-      <div className="page">
+      <div className="page spending-page">
         <div className="page-header">
           <div>
             <h1 className="page-title">Spending Analysis</h1>
@@ -103,7 +115,7 @@ export default function SpendingAnalysis() {
   }
 
   return (
-    <div className="page">
+    <div className="page spending-page">
       <div className="page-header">
         <div>
           <h1 className="page-title">Spending Analysis</h1>
