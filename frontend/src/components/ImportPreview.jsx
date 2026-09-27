@@ -5,7 +5,16 @@ import { formatCurrency } from '../utils/constants';
 /**
  * ImportPreview — shows first 20-50 parsed rows before user confirms import.
  */
-export default function ImportPreview({ rows, mapping, totalRows, onConfirm, onCancel, confirming }) {
+export default function ImportPreview({
+  rows,
+  mapping,
+  totalRows,
+  onConfirm,
+  onCancel,
+  confirming,
+  ocrUsed = false,
+  ocrWarning = null,
+}) {
   if (!rows || rows.length === 0) return null;
 
   // Build preview using the mapping to extract date/desc/amount columns
@@ -23,14 +32,52 @@ export default function ImportPreview({ rows, mapping, totalRows, onConfirm, onC
   return (
     <div className="import-preview">
       <div className="import-preview-header">
-        <h3 className="import-preview-title">
-          Transaction Preview
-        </h3>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <h3 className="import-preview-title">
+            Transaction Preview
+          </h3>
+          {ocrUsed && (
+            <span
+              style={{
+                fontSize: '11px',
+                fontWeight: 700,
+                padding: '2px 8px',
+                borderRadius: '999px',
+                background: '#d8f3dc',
+                color: '#1b4332',
+                border: '1px solid rgba(82, 183, 136, 0.4)',
+              }}
+            >
+              AI OCR Extracted
+            </span>
+          )}
+        </div>
         <p className="import-preview-sub">
           Showing {previewCount} of {totalRows} rows.{' '}
           {!showingAll && `The remaining ${totalRows - previewCount} rows will also be imported.`}
         </p>
       </div>
+
+      {ocrWarning && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            background: '#fef3c7',
+            color: '#b45309',
+            border: '1px solid rgba(217, 119, 6, 0.35)',
+            borderRadius: '10px',
+            padding: '10px 14px',
+            fontSize: '13px',
+            fontWeight: 500,
+            marginBottom: '16px',
+          }}
+        >
+          <AlertTriangle size={16} style={{ flexShrink: 0 }} />
+          <span>{ocrWarning}</span>
+        </div>
+      )}
 
       <div className="import-preview-table-wrap">
         <table className="import-preview-table">

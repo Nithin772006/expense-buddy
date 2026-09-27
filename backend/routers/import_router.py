@@ -9,16 +9,59 @@ Endpoints:
 """
 
 import json
+import logging
 import os
+import time
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
+from parsers.pdf_parser import (
+    PasswordRequiredError,
+    IncorrectPasswordError,
+    UnsupportedEncryptionError,
+)
 from services import import_service
 from services.supabase_client import get_supabase_client, verify_access_token
 
+logger = logging.getLogger("expense_buddy.import_router")
+
 router = APIRouter(prefix="/import", tags=["Import"])
+
+# Rate limiting for password attempts: client_ip -> {"count": int, "reset_at": float}
+_PASSWORD_ATTEMPTS: dict[str, dict] = {}
+MAX_PASSWORD_ATTEMPTS = 5
+LOCKOUT_DURATION_SEC = 300  # 5 minutes
+
+
+def _check_password_rate_limit(client_ip: str):
+    now = time.time()
+    record = _PASSWORD_ATTEMPTS.get(client_ip)
+    if record:
+        if now < record["reset_at"]:
+            if record["count"] >= MAX_PASSWORD_ATTEMPTS:
+                wait_sec = max(int(record["reset_at"] - now), 1)
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Too many incorrect password attempts. Please wait {wait_sec} seconds before trying again.",
+                )
+        else:
+            _PASSWORD_ATTEMPTS.pop(client_ip, None)
+
+
+def _record_failed_password_attempt(client_ip: str):
+    now = time.time()
+    record = _PASSWORD_ATTEMPTS.get(client_ip)
+    if not record or now >= record["reset_at"]:
+        _PASSWORD_ATTEMPTS[client_ip] = {"count": 1, "reset_at": now + LOCKOUT_DURATION_SEC}
+    else:
+        record["count"] += 1
+
+
+def _clear_password_attempts(client_ip: str):
+    _PASSWORD_ATTEMPTS.pop(client_ip, None)
+
 
 # Max file size: 20 MB
 MAX_FILE_SIZE = 20 * 1024 * 1024
@@ -95,8 +138,10 @@ class ImportHistoryRequest(BaseModel):
 
 @router.post("/parse")
 async def parse_file(
+    request: Request,
     file: UploadFile = File(...),
     file_type: str = Form("auto"),
+    password: Optional[str] = Form(None),
 ):
     """
     Upload a file and get back:
@@ -106,19 +151,51 @@ async def parse_file(
     - auto_mapping (detected column → field mapping)
     - mapping_confident (bool)
     - sheet_names (Excel only)
+    - is_scanned (bool)
+    - ocr_used (bool)
+    - ocr_confidence_warning (bool)
     """
+    client_ip = request.client.host if request.client else "unknown"
+
+    # If user submitted a password, check rate limiting first
+    if password is not None:
+        _check_password_rate_limit(client_ip)
+
     file_bytes = await file.read()
     _validate_file(file, file_bytes)
 
     filename = file.filename or "upload"
     try:
-        result = import_service.parse_file(file_bytes, filename, file_type)
+        result = import_service.parse_file(file_bytes, filename, file_type, password=password)
+        # Clear failed password attempts on success
+        if password is not None:
+            _clear_password_attempts(client_ip)
+
         # Return preview_rows for UI and all rows for confirmation
         result["preview_rows"] = result["rows"][:50]
         return result
+    except PasswordRequiredError:
+        return {
+            "requires_password": True,
+            "filename": filename,
+            "source": "pdf",
+            "message": "This PDF is password-protected. Please enter the password to unlock your statement.",
+        }
+    except IncorrectPasswordError:
+        _record_failed_password_attempt(client_ip)
+        raise HTTPException(
+            status_code=422,
+            detail="Incorrect PDF password. Please try again.",
+        )
+    except UnsupportedEncryptionError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    except RuntimeError as e:
+        # Runtime OCR engine missing or unavailable
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
+        logger.error("Failed to parse file: %s", e)
         raise HTTPException(status_code=500, detail=f"Failed to parse file: {str(e)}")
 
 

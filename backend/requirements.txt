@@ -9,6 +9,10 @@ python-multipart
 openpyxl
 xlrd
 pdfplumber
+pypdf
+pypdfium2
+pytesseract
+rapidocr-onnxruntime
 supabase
 python-dotenv
 python-dateutil

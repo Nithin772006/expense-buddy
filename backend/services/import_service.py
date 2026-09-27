@@ -26,7 +26,7 @@ from services.supabase_client import get_supabase_client
 
 # ── Parse stage (returns preview data without saving) ──────────────────────
 
-def parse_file(file_bytes: bytes, filename: str, file_type: str) -> dict:
+def parse_file(file_bytes: bytes, filename: str, file_type: str, password: Optional[str] = None) -> dict:
     """
     Parse an uploaded file and return raw parsed data + auto-detected mapping.
     Does NOT write to the database.
@@ -40,7 +40,7 @@ def parse_file(file_bytes: bytes, filename: str, file_type: str) -> dict:
         parsed = parse_excel(file_bytes, filename)
         source = "excel"
     elif file_type == "pdf" or filename_lower.endswith(".pdf"):
-        parsed = parse_pdf(file_bytes)
+        parsed = parse_pdf(file_bytes, password=password)
         source = "pdf"
     else:
         raise ValueError(
@@ -69,6 +69,11 @@ def parse_file(file_bytes: bytes, filename: str, file_type: str) -> dict:
         "auto_mapping": auto_mapping,
         "mapping_confident": mapping_confident,
         "source": source,
+        "is_scanned": parsed.get("is_scanned", False),
+        "ocr_used": parsed.get("ocr_used", False),
+        "was_encrypted": parsed.get("was_encrypted", False),
+        "ocr_confidence_warning": parsed.get("ocr_confidence_warning", False),
+        "ocr_warning_message": parsed.get("ocr_warning_message"),
         # Include extra info for Excel multi-sheet
         "sheet_names": parsed.get("sheet_names"),
         "selected_sheet": parsed.get("selected_sheet"),

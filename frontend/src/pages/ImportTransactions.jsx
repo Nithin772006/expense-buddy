@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Upload, History, CheckCircle2, AlertCircle, ChevronDown,
   FileText, RefreshCw, Table, FileSpreadsheet, FileScan,
+  Lock, Eye, EyeOff, ShieldCheck,
 } from 'lucide-react';
 import Card from '../components/Card';
 import DropZone from '../components/DropZone';
@@ -56,6 +57,16 @@ export default function ImportTransactions() {
   const [selectedSheet, setSelectedSheet] = useState(null);
   const [mapping, setMapping]         = useState(null);
 
+  // Password-protected PDF state
+  const [needsPassword, setNeedsPassword] = useState(false);
+  const [pdfPassword, setPdfPassword]     = useState('');
+  const [showPassword, setShowPassword]   = useState(false);
+  const [passwordError, setPasswordError] = useState('');
+  const [isDecrypting, setIsDecrypting]   = useState(false);
+
+  // Scanned PDF / OCR state
+  const [ocrWarning, setOcrWarning]       = useState(null);
+
   // Import state
   const [stage, setStage]             = useState(STAGE.UPLOAD);
   const [parseError, setParseError]   = useState('');
@@ -96,6 +107,10 @@ export default function ImportTransactions() {
     setParseResult(null);
     setParseError('');
     setMapping(null);
+    setNeedsPassword(false);
+    setPdfPassword('');
+    setPasswordError('');
+    setOcrWarning(null);
     setStage(STAGE.UPLOAD);
 
     if (!selectedFile) return;
@@ -103,9 +118,20 @@ export default function ImportTransactions() {
     setParsing(true);
     try {
       const result = await parseFile(selectedFile);
+
+      // Handle password-protected PDF
+      if (result.requires_password) {
+        setNeedsPassword(true);
+        setParsing(false);
+        return;
+      }
+
       setParseResult(result);
       setMapping(result.auto_mapping);
       setSelectedSheet(result.selected_sheet);
+      if (result.ocr_warning_message) {
+        setOcrWarning(result.ocr_warning_message);
+      }
 
       if (result.mapping_confident) {
         setStage(STAGE.PREVIEW);
@@ -118,6 +144,46 @@ export default function ImportTransactions() {
       setParsing(false);
     }
   }, []);
+
+  // ── Handle Password Unlock ────────────────────────────────────────────
+  const handlePasswordSubmit = async (e) => {
+    e.preventDefault();
+    if (!file || !pdfPassword) return;
+
+    setIsDecrypting(true);
+    setPasswordError('');
+
+    try {
+      const result = await parseFile(file, pdfPassword);
+      // Immediately clear sensitive password from state
+      setPdfPassword('');
+      setNeedsPassword(false);
+      setParseResult(result);
+      setMapping(result.auto_mapping);
+      setSelectedSheet(result.selected_sheet);
+      if (result.ocr_warning_message) {
+        setOcrWarning(result.ocr_warning_message);
+      }
+
+      if (result.mapping_confident) {
+        setStage(STAGE.PREVIEW);
+      } else {
+        setStage(STAGE.MAPPING);
+      }
+    } catch (err) {
+      setPasswordError(extractErrorMessage(err, 'Incorrect PDF password. Please try again.'));
+    } finally {
+      setIsDecrypting(false);
+    }
+  };
+
+  const handlePasswordCancel = () => {
+    setPdfPassword('');
+    setNeedsPassword(false);
+    setPasswordError('');
+    setFile(null);
+    setStage(STAGE.UPLOAD);
+  };
 
   // ── Sheet change (Excel) ──────────────────────────────────────────────
   const handleSheetChange = async (sheetName) => {
@@ -189,6 +255,10 @@ export default function ImportTransactions() {
     setParseResult(null);
     setParseError('');
     setMapping(null);
+    setNeedsPassword(false);
+    setPdfPassword('');
+    setPasswordError('');
+    setOcrWarning(null);
     setImportSummary(null);
     setProgress(0);
     setStage(STAGE.UPLOAD);
@@ -213,40 +283,142 @@ export default function ImportTransactions() {
           {/* Upload stage */}
           {stage === STAGE.UPLOAD && (
             <Card>
-              <DropZone onFile={handleFile} />
+              {!needsPassword ? (
+                <>
+                  <DropZone onFile={handleFile} />
 
-              {parsing && (
-                <div className="import-parsing">
-                  <Spinner />
-                  <p>Parsing your file…</p>
-                </div>
-              )}
+                  {parsing && (
+                    <div className="import-parsing" style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                      <Spinner />
+                      <p style={{ color: 'var(--eb-forest, #1b4332)', fontWeight: 600 }}>
+                        {file?.name?.toLowerCase()?.endsWith('.pdf')
+                          ? 'Reading statement (inspecting digital text and checking for scanned tables/OCR)…'
+                          : 'Parsing your file…'}
+                      </p>
+                    </div>
+                  )}
 
-              {parseError && (
-                <div className="import-error">
-                  <AlertCircle size={15} />
-                  <span>{parseError}</span>
-                </div>
-              )}
+                  {parseError && (
+                    <div className="import-error" style={{ marginTop: '14px' }}>
+                      <AlertCircle size={15} />
+                      <span>{parseError}</span>
+                    </div>
+                  )}
 
-              {/* Sheet selector (Excel multi-sheet) */}
-              {parseResult?.sheet_names?.length > 1 && (
-                <div className="sheet-selector">
-                  <label className="sheet-selector-label">
-                    <FileSpreadsheet size={14} /> Select Sheet
-                  </label>
-                  <div className="sheet-selector-wrap">
-                    <select
-                      className="sheet-selector-select"
-                      value={selectedSheet || ''}
-                      onChange={(e) => handleSheetChange(e.target.value)}
-                    >
-                      {parseResult.sheet_names.map((s) => (
-                        <option key={s} value={s}>{s}</option>
-                      ))}
-                    </select>
-                    <ChevronDown size={14} />
+                  {/* Sheet selector (Excel multi-sheet) */}
+                  {parseResult?.sheet_names?.length > 1 && (
+                    <div className="sheet-selector">
+                      <label className="sheet-selector-label">
+                        <FileSpreadsheet size={14} /> Select Sheet
+                      </label>
+                      <div className="sheet-selector-wrap">
+                        <select
+                          className="sheet-selector-select"
+                          value={selectedSheet || ''}
+                          onChange={(e) => handleSheetChange(e.target.value)}
+                        >
+                          {parseResult.sheet_names.map((s) => (
+                            <option key={s} value={s}>{s}</option>
+                          ))}
+                        </select>
+                        <ChevronDown size={14} />
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                /* Password Prompt Card for Encrypted PDF */
+                <div className="pdf-password-prompt" style={{ padding: '8px 4px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '16px' }}>
+                    <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: '#eaf5ee', color: '#2d6a4f', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <Lock size={22} />
+                    </div>
+                    <div>
+                      <h3 style={{ fontSize: '17px', fontWeight: 800, color: 'var(--eb-forest, #1b4332)', margin: 0 }}>
+                        Password-Protected PDF Statement
+                      </h3>
+                      <p style={{ fontSize: '13px', color: 'var(--eb-text-subtle, #688a77)', margin: '3px 0 0' }}>
+                        This statement is encrypted by your bank. Enter the opening password to unlock and import.
+                      </p>
+                    </div>
                   </div>
+
+                  {passwordError && (
+                    <div className="import-error" style={{ marginBottom: '14px' }}>
+                      <AlertCircle size={15} />
+                      <span>{passwordError}</span>
+                    </div>
+                  )}
+
+                  <form onSubmit={handlePasswordSubmit}>
+                    <div style={{ marginBottom: '16px' }}>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: 'var(--eb-forest, #1b4332)', marginBottom: '8px' }}>
+                        Opening Password
+                      </label>
+                      <div style={{ position: 'relative' }}>
+                        <input
+                          type={showPassword ? 'text' : 'password'}
+                          value={pdfPassword}
+                          onChange={(e) => setPdfPassword(e.target.value)}
+                          placeholder="Enter your PDF statement password"
+                          autoFocus
+                          disabled={isDecrypting}
+                          style={{
+                            width: '100%',
+                            padding: '11px 44px 11px 14px',
+                            borderRadius: '12px',
+                            border: '1.5px solid rgba(82, 183, 136, 0.35)',
+                            fontSize: '14px',
+                            outline: 'none',
+                            boxSizing: 'border-box',
+                            background: '#ffffff',
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          style={{
+                            position: 'absolute',
+                            right: '12px',
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            background: 'transparent',
+                            border: 'none',
+                            cursor: 'pointer',
+                            color: 'var(--eb-text-subtle, #688a77)',
+                            padding: 0,
+                            display: 'flex',
+                            alignItems: 'center',
+                          }}
+                          aria-label={showPassword ? 'Hide password' : 'Show password'}
+                        >
+                          {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </button>
+                      </div>
+                      <p style={{ fontSize: '11.5px', color: 'var(--eb-text-subtle, #688a77)', marginTop: '8px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <ShieldCheck size={14} style={{ color: 'var(--eb-emerald, #2d6a4f)' }} />
+                        Privacy guarantee: Your password is used in-memory only and is never stored, logged, or saved to the database.
+                      </p>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                      <button
+                        type="button"
+                        className="btn-secondary btn-sm"
+                        onClick={handlePasswordCancel}
+                        disabled={isDecrypting}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="btn-primary btn-sm"
+                        disabled={isDecrypting || !pdfPassword.trim()}
+                      >
+                        {isDecrypting ? 'Decrypting…' : 'Unlock & Import'}
+                      </button>
+                    </div>
+                  </form>
                 </div>
               )}
             </Card>
@@ -296,6 +468,8 @@ export default function ImportTransactions() {
                 onConfirm={handleImportConfirm}
                 onCancel={handleReset}
                 confirming={confirming}
+                ocrUsed={parseResult.ocr_used}
+                ocrWarning={ocrWarning}
               />
               {parseError && (
                 <div className="import-error">

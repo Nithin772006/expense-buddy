@@ -15,13 +15,16 @@ importApi.interceptors.request.use(async (config) => {
 });
 
 /**
- * Upload a file for parsing. Returns { columns, preview_rows, auto_mapping,
- * mapping_confident, total_rows, sheet_names, selected_sheet, source }.
+ * Upload a file for parsing. Supports optional password for encrypted PDFs.
+ * Returns { columns, preview_rows, auto_mapping, mapping_confident, total_rows, ... }.
  */
-export async function parseFile(file) {
+export async function parseFile(file, password = null) {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('file_type', 'auto');
+  if (password) {
+    formData.append('password', password);
+  }
 
   const { data } = await importApi.post('/import/parse', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
