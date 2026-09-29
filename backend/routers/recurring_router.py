@@ -16,6 +16,12 @@ from services.recurring_reminder_service import (
     get_stored_recurring_payments,
     sync_user_recurring_payments,
     manual_mark_paid,
+    update_payment_upi_config,
+)
+from services.upi_service import (
+    validate_upi_id,
+    build_upi_payment_uri,
+    format_upi_amount,
 )
 
 router = APIRouter(prefix="/recurring-payments", tags=["Recurring Payments"])
@@ -50,6 +56,11 @@ class MarkPaidRequest(BaseModel):
     paid_date: str = Field(..., description="Date payment was made in YYYY-MM-DD format")
     actual_amount: float = Field(..., gt=0, description="Actual amount paid in INR")
     notes: Optional[str] = Field(None, description="Optional note for this billing cycle")
+
+
+class UpiConfigRequest(BaseModel):
+    payee_upi_id: str = Field(..., description="Payee VPA / UPI ID (e.g. merchant@upi)")
+    payee_name: Optional[str] = Field(None, description="Optional Payee business/merchant name")
 
 
 # ── Read-Only GET Endpoints ──────────────────────────────────────────────────
@@ -346,3 +357,113 @@ async def mark_payment_as_paid(
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to mark payment as paid: {str(e)}")
+
+
+@router.patch("/{payment_id}/upi-config")
+@router.post("/{payment_id}/upi-config")
+async def set_payment_upi_config(
+    payment_id: str,
+    request: UpiConfigRequest,
+    auth: tuple[str, str] = Depends(get_current_auth),
+):
+    """
+    Configure or update Payee UPI ID and Name for a recurring bill/subscription.
+    Enforces format validation and user isolation.
+    """
+    user_id, token = auth
+    try:
+        res = update_payment_upi_config(
+            user_id=user_id,
+            payment_id=payment_id,
+            payee_upi_id=request.payee_upi_id,
+            payee_name=request.payee_name,
+            token=token,
+        )
+        return res
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update UPI config: {str(e)}")
+
+
+@router.get("/{payment_id}/upi-intent")
+async def get_payment_upi_intent(
+    payment_id: str,
+    auth: tuple[str, str] = Depends(get_current_auth),
+):
+    """
+    Generate dynamic UPI payment intent URI for a recurring commitment.
+    Returns valid upi://pay URI if payee UPI ID is configured, or an appropriate notice.
+    """
+    user_id, token = auth
+    client = get_supabase_client(token)
+
+    try:
+        rec_resp = (
+            client
+            .from_("recurring_payments")
+            .select("*")
+            .eq("id", payment_id)
+            .eq("user_id", user_id)
+            .single()
+            .execute()
+        )
+        rec = rec_resp.data
+        if not rec:
+            raise HTTPException(status_code=404, detail="Recurring payment not found or access denied.")
+
+        evidence = rec.get("detection_evidence") or {}
+        payee_upi_id = rec.get("payee_upi_id") or evidence.get("payee_upi_id")
+        payee_name = rec.get("payee_name") or evidence.get("payee_name") or rec.get("merchant") or "Merchant"
+        amount = float(rec.get("average_amount") or 0.0)
+
+        if not payee_upi_id or not validate_upi_id(payee_upi_id):
+            return {
+                "valid": False,
+                "is_configured": False,
+                "payment_id": payment_id,
+                "merchant": rec.get("merchant"),
+                "payee_name": payee_name,
+                "payee_upi_id": None,
+                "amount": amount,
+                "currency": "INR",
+                "message": "UPI payment details are not configured for this bill.",
+            }
+
+        if amount <= 0:
+            return {
+                "valid": False,
+                "is_configured": True,
+                "payment_id": payment_id,
+                "merchant": rec.get("merchant"),
+                "payee_name": payee_name,
+                "payee_upi_id": payee_upi_id,
+                "amount": amount,
+                "currency": "INR",
+                "message": "Invalid bill amount for UPI payment.",
+            }
+
+        uri = build_upi_payment_uri(
+            payee_upi_id=payee_upi_id,
+            payee_name=payee_name,
+            amount=amount,
+            currency="INR",
+            transaction_note=f"Payment for {rec.get('merchant')}",
+        )
+
+        return {
+            "valid": True,
+            "is_configured": True,
+            "payment_id": payment_id,
+            "merchant": rec.get("merchant"),
+            "payee_name": payee_name,
+            "payee_upi_id": payee_upi_id,
+            "amount": amount,
+            "formatted_amount": format_upi_amount(amount),
+            "currency": "INR",
+            "upi_uri": uri,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate UPI intent: {str(e)}")

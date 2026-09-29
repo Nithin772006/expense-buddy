@@ -16,6 +16,8 @@ import api, {
   pauseRecurringPayment,
   resumeRecurringPayment,
   markRecurringPaymentPaid,
+  updateRecurringUpiConfig,
+  getRecurringUpiIntent,
 } from './api';
 
 export {
@@ -31,6 +33,8 @@ export {
   pauseRecurringPayment,
   resumeRecurringPayment,
   markRecurringPaymentPaid,
+  updateRecurringUpiConfig,
+  getRecurringUpiIntent,
 };
 
 export default {
@@ -46,4 +50,6 @@ export default {
   pauseRecurringPayment,
   resumeRecurringPayment,
   markRecurringPaymentPaid,
+  updateRecurringUpiConfig,
+  getRecurringUpiIntent,
 };

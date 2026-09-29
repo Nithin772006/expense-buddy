@@ -16,49 +16,69 @@ def _desc_key(description: str) -> str:
     return description.lower().strip()[:40]
 
 
+def _tx_fingerprint(row: dict) -> tuple:
+    """Build a composite fingerprint including reference and balance when available."""
+    date_str = str(row.get("transaction_date", ""))
+    try:
+        amt = float(row.get("amount", 0.0))
+    except (ValueError, TypeError):
+        amt = 0.0
+    tx_type = row.get("transaction_type", "debit")
+    desc = _desc_key(row.get("description", ""))
+    ref = str(row.get("reference") or "").strip().lower()
+    bal = row.get("account_balance")
+    bal_str = f"{float(bal):.2f}" if bal is not None else ""
+
+    # If reference or balance is available, use the high-precision fingerprint
+    if ref or bal_str:
+        return (date_str, amt, tx_type, desc, ref, bal_str)
+    # Otherwise fallback to standard 4-tuple
+    return (date_str, amt, tx_type, desc)
+
+
 def build_duplicate_set(user_id: str, token: Optional[str] = None) -> set[tuple]:
     """
     Fetch all existing transactions for this user and return a set of
-    (date_str, amount, type, desc_key) tuples for O(1) lookup.
+    fingerprint tuples for O(1) lookup.
     """
     client = get_supabase_client(token)
-    response = (
-        client
-        .from_("transactions")
-        .select("transaction_date, amount, transaction_type, description")
-        .eq("user_id", user_id)
-        .execute()
-    )
+    try:
+        response = (
+            client
+            .from_("transactions")
+            .select("transaction_date, amount, transaction_type, description, reference, account_balance")
+            .eq("user_id", user_id)
+            .execute()
+        )
+    except Exception:
+        # Fallback if reference or account_balance columns query fails
+        response = (
+            client
+            .from_("transactions")
+            .select("transaction_date, amount, transaction_type, description")
+            .eq("user_id", user_id)
+            .execute()
+        )
+
     existing = set()
     for row in (response.data or []):
-        key = (
-            str(row["transaction_date"]),
-            float(row["amount"]),
-            row.get("transaction_type", "debit"),
-            _desc_key(row["description"]),
-        )
-        existing.add(key)
+        existing.add(_tx_fingerprint(row))
     return existing
 
 
 def is_duplicate(tx: dict, existing: set[tuple]) -> bool:
     """Return True if tx is likely a duplicate against the existing set."""
-    key = (
-        str(tx["transaction_date"]),
-        float(tx["amount"]),
-        tx.get("transaction_type", "debit"),
-        _desc_key(tx["description"]),
-    )
-    return key in existing
+    fp = _tx_fingerprint(tx)
+    if fp in existing:
+        return True
+    # If tx had reference/balance, also check standard 4-tuple fallback only if identical
+    if len(fp) > 4 and not fp[4]:  # no reference
+        base_fp = fp[:4]
+        return base_fp in existing
+    return False
 
 
 def mark_as_inserted(tx: dict, existing: set[tuple]) -> None:
     """Add a newly inserted tx key to the in-memory set to prevent
     intra-batch duplicates in the same import run."""
-    key = (
-        str(tx["transaction_date"]),
-        float(tx["amount"]),
-        tx.get("transaction_type", "debit"),
-        _desc_key(tx["description"]),
-    )
-    existing.add(key)
+    existing.add(_tx_fingerprint(tx))

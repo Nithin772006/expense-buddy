@@ -10,9 +10,17 @@ import {
   resumeRecurringPayment,
   markRecurringPaymentPaid,
   getPaymentCycleHistory,
+  updateRecurringUpiConfig,
 } from '../services/api';
 import { getCachedRecurringPayments } from '../services/queryCache';
 import { formatCurrency } from '../utils/constants';
+import {
+  isValidUpiId,
+  formatUpiAmount,
+  buildUpiUri,
+  isMobileDevice,
+  getSuggestedBillerDetails,
+} from '../utils/upiUtils';
 
 // ... icons ...
 
@@ -41,6 +49,9 @@ import {
   ShoppingBag,
   Home,
   Check,
+  Smartphone,
+  Copy,
+  Edit2,
 } from 'lucide-react';
 
 export default function RecurringPayments() {
@@ -61,6 +72,65 @@ export default function RecurringPayments() {
     actual_amount: '',
     notes: '',
   });
+
+  // UPI Redirection & Intent state
+  const [upiStatus, setUpiStatus] = useState('idle'); // 'idle' | 'initiated' | 'desktop_notice'
+  const [upiError, setUpiError] = useState(null);
+  const [upiEditForm, setUpiEditForm] = useState({ payee_upi_id: '', payee_name: '' });
+  const [isEditingUpi, setIsEditingUpi] = useState(false);
+  const [savingUpiConfig, setSavingUpiConfig] = useState(false);
+  const [copiedUpi, setCopiedUpi] = useState(false);
+  const [demoPayments, setDemoPayments] = useState([]);
+
+  const handleLoadDemo = () => {
+    setDemoPayments([
+      {
+        id: 'demo-spotify-1',
+        merchant: 'Spotify Premium',
+        category: 'Subscription',
+        frequency: 'monthly',
+        average_amount: 119.18,
+        confidence_score: 96,
+        next_expected_date: '2026-09-30',
+        current_cycle_status: 'due_soon',
+        is_paid: false,
+        last_paid_date: '2026-08-30',
+        payee_upi_id: 'spotify.pay@hdfcbank',
+        payee_name: 'Spotify India',
+        detection_evidence: { evidence_points: ['Identical monthly billing cycle', 'Subscription pattern recognized'] },
+      },
+      {
+        id: 'demo-electricity-2',
+        merchant: 'Electricity',
+        category: 'Utilities',
+        frequency: 'monthly',
+        average_amount: 1850.00,
+        confidence_score: 92,
+        next_expected_date: '2026-10-02',
+        current_cycle_status: 'due_soon',
+        is_paid: false,
+        last_paid_date: '2026-09-02',
+        payee_upi_id: '',
+        payee_name: '',
+        detection_evidence: { evidence_points: ['Monthly utility bill cycle', 'Variable electricity pattern'] },
+      },
+      {
+        id: 'demo-airtel-3',
+        merchant: 'Airtel Broadband',
+        category: 'Utilities',
+        frequency: 'monthly',
+        average_amount: 999.00,
+        confidence_score: 94,
+        next_expected_date: '2026-10-05',
+        current_cycle_status: 'due_soon',
+        is_paid: false,
+        last_paid_date: '2026-09-05',
+        payee_upi_id: 'airtel.pay@icici',
+        payee_name: 'Airtel Telecommunications',
+        detection_evidence: { evidence_points: ['Fixed monthly Wi-Fi bill'] },
+      },
+    ]);
+  };
 
   const loadData = async (force = false) => {
     try {
@@ -93,24 +163,149 @@ export default function RecurringPayments() {
     }
   };
 
-  const handleOpenMarkPaid = (payment) => {
+  const handleOpenMarkPaid = (payment, customNote = '') => {
     setSelectedPayment(payment);
     setPaidForm({
       paid_date: new Date().toISOString().split('T')[0],
       actual_amount: payment.average_amount || '',
-      notes: '',
+      notes: customNote || (upiStatus === 'initiated' ? 'Paid via UPI app' : ''),
     });
     setActiveModal('mark_paid');
   };
 
   const handleOpenUpiPay = (payment) => {
     setSelectedPayment(payment);
+    setUpiStatus('idle');
+    setUpiError(null);
+    setCopiedUpi(false);
+
+    const suggested = getSuggestedBillerDetails(payment.merchant);
+    const existingUpi = payment.payee_upi_id || '';
+    const existingName = payment.payee_name || suggested?.payeeName || payment.merchant || '';
+
+    setUpiEditForm({
+      payee_upi_id: existingUpi || suggested?.vpa || '',
+      payee_name: existingName,
+    });
+
+    setIsEditingUpi(!existingUpi);
     setActiveModal('upi_pay');
+  };
+
+  const handleSaveUpiConfig = async (e) => {
+    if (e) e.preventDefault();
+    if (!selectedPayment) return;
+
+    const vpa = (upiEditForm.payee_upi_id || '').trim();
+    const name = (upiEditForm.payee_name || '').trim() || selectedPayment.merchant;
+
+    if (!isValidUpiId(vpa)) {
+      setUpiError('Please enter a valid Payee UPI ID (e.g. merchant@upi, biller@bank).');
+      return;
+    }
+
+    if (selectedPayment.id && String(selectedPayment.id).startsWith('demo-')) {
+      setDemoPayments((prev) =>
+        prev.map((p) =>
+          p.id === selectedPayment.id ? { ...p, payee_upi_id: vpa, payee_name: name } : p
+        )
+      );
+      setSelectedPayment((prev) => ({ ...prev, payee_upi_id: vpa, payee_name: name }));
+      setIsEditingUpi(false);
+      setSavingUpiConfig(false);
+      return;
+    }
+
+    setSavingUpiConfig(true);
+    setUpiError(null);
+    try {
+      await updateRecurringUpiConfig(selectedPayment.id, {
+        payee_upi_id: vpa,
+        payee_name: name,
+      });
+
+      const updated = {
+        ...selectedPayment,
+        payee_upi_id: vpa,
+        payee_name: name,
+      };
+      setSelectedPayment(updated);
+      setIsEditingUpi(false);
+      await loadData(true);
+    } catch (err) {
+      console.error('Failed to save UPI config:', err);
+      setUpiError(err.response?.data?.detail || 'Failed to update UPI settings.');
+    } finally {
+      setSavingUpiConfig(false);
+    }
+  };
+
+  const handleLaunchUpiApp = () => {
+    setUpiError(null);
+
+    if (!selectedPayment?.payee_upi_id) {
+      setUpiError('UPI payment details are not configured for this bill.');
+      setIsEditingUpi(true);
+      return;
+    }
+
+    if (!isValidUpiId(selectedPayment.payee_upi_id)) {
+      setUpiError('Unable to start UPI payment. Please check the payment details.');
+      setIsEditingUpi(true);
+      return;
+    }
+
+    let uri;
+    try {
+      uri = buildUpiUri({
+        payeeUpiId: selectedPayment.payee_upi_id,
+        payeeName: selectedPayment.payee_name || selectedPayment.merchant,
+        amount: selectedPayment.average_amount,
+        currency: 'INR',
+        transactionNote: `Bill payment: ${selectedPayment.merchant}`,
+      });
+    } catch (err) {
+      setUpiError(err.message || 'Unable to start UPI payment. Please check the payment details.');
+      return;
+    }
+
+    const isMobile = isMobileDevice();
+    if (!isMobile) {
+      setUpiStatus('desktop_notice');
+      return;
+    }
+
+    setUpiStatus('initiated');
+
+    try {
+      window.location.href = uri;
+    } catch (err) {
+      console.error('UPI launch failed:', err);
+      setUpiError('No compatible UPI app could be opened. Please install/use a UPI application or use "Already Paid? Record Payment".');
+    }
+  };
+
+  const handleCopyUpiId = (text) => {
+    if (!text) return;
+    navigator.clipboard?.writeText(text);
+    setCopiedUpi(true);
+    setTimeout(() => setCopiedUpi(false), 2000);
   };
 
   const handleSubmitMarkPaid = async (e) => {
     e.preventDefault();
     if (!selectedPayment) return;
+
+    if (selectedPayment.id && String(selectedPayment.id).startsWith('demo-')) {
+      setDemoPayments((prev) =>
+        prev.map((p) =>
+          p.id === selectedPayment.id ? { ...p, is_paid: true, current_cycle_status: 'paid' } : p
+        )
+      );
+      setActiveModal(null);
+      return;
+    }
+
     setActionLoading(true);
     try {
       await markRecurringPaymentPaid(selectedPayment.id, {
@@ -195,17 +390,17 @@ export default function RecurringPayments() {
     );
   }
 
-  const summary = data?.summary || {
-    active_count: 0,
-    total_monthly_commitment: 0,
-    due_soon_count: 0,
-    due_today_count: 0,
-    overdue_count: 0,
-    paid_count: 0,
-  };
-
-  const allConfirmed = data?.recurring_payments || [];
+  const allConfirmed = [...(data?.recurring_payments || []), ...demoPayments];
   const possiblePatterns = data?.possible_patterns || [];
+
+  const summary = (data?.summary && data.summary.active_count > 0) ? data.summary : {
+    active_count: allConfirmed.filter(p => !p.is_paid).length,
+    total_monthly_commitment: allConfirmed.reduce((sum, p) => sum + (p.average_amount || 0), 0),
+    due_soon_count: allConfirmed.filter(p => p.current_cycle_status === 'due_soon' && !p.is_paid).length,
+    due_today_count: allConfirmed.filter(p => p.current_cycle_status === 'due_today' && !p.is_paid).length,
+    overdue_count: allConfirmed.filter(p => p.current_cycle_status === 'overdue' && !p.is_paid).length,
+    paid_count: allConfirmed.filter(p => p.is_paid).length,
+  };
 
   // Categorize into Subscriptions vs Household & Utility Bills
   const isSubscription = (p) => {
@@ -380,6 +575,13 @@ export default function RecurringPayments() {
             <p style={{ color: '#476856', margin: 0, fontSize: '0.95rem' }}>
               No subscriptions detected yet. When you pay for Spotify, Netflix, Amazon Prime, or cloud services, they will appear here automatically.
             </p>
+            <button
+              onClick={handleLoadDemo}
+              className="btn-secondary"
+              style={{ marginTop: '14px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+            >
+              <Sparkles size={16} /> Load Demo Subscriptions &amp; Bills
+            </button>
           </Card>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '16px' }}>
@@ -528,6 +730,13 @@ export default function RecurringPayments() {
             <p style={{ color: '#476856', margin: 0, fontSize: '0.95rem' }}>
               No utility bills detected yet. Add or import your monthly bills to activate due date tracking.
             </p>
+            <button
+              onClick={handleLoadDemo}
+              className="btn-secondary"
+              style={{ marginTop: '14px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+            >
+              <Sparkles size={16} /> Load Demo Subscriptions &amp; Bills
+            </button>
           </Card>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '16px' }}>
@@ -708,72 +917,237 @@ export default function RecurringPayments() {
       )}
 
       {/* ── Modal: UPI Payment Flow (Direct Redirection / Intent) ── */}
-      {activeModal === 'upi_pay' && selectedPayment && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(13, 38, 28, 0.45)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1200, padding: '1rem' }}>
-          <div style={{ background: '#ffffff', border: '1px solid rgba(82, 183, 136, 0.35)', borderRadius: '20px', width: '100%', maxWidth: '440px', padding: '24px', boxShadow: '0 20px 50px rgba(13, 38, 28, 0.15)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#d8f3dc', color: '#1b4332', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <ExternalLink size={18} />
-                </div>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#132e22' }}>
-                    Pay via UPI
-                  </h3>
-                  <p style={{ margin: 0, fontSize: '0.78rem', color: '#688a77' }}>Direct settlement for verified bill</p>
-                </div>
-              </div>
-              <button onClick={() => setActiveModal(null)} style={{ background: 'transparent', border: 'none', color: '#688a77', cursor: 'pointer' }}>
-                <X size={20} />
-              </button>
-            </div>
+      {activeModal === 'upi_pay' && selectedPayment && (() => {
+        const isMobile = isMobileDevice();
+        const hasUpiConfig = Boolean(selectedPayment.payee_upi_id && isValidUpiId(selectedPayment.payee_upi_id));
+        let dynamicUpiUri = '';
+        if (hasUpiConfig) {
+          try {
+            dynamicUpiUri = buildUpiUri({
+              payeeUpiId: selectedPayment.payee_upi_id,
+              payeeName: selectedPayment.payee_name || selectedPayment.merchant,
+              amount: selectedPayment.average_amount,
+              currency: 'INR',
+              transactionNote: `Bill payment: ${selectedPayment.merchant}`,
+            });
+          } catch (e) {
+            dynamicUpiUri = '';
+          }
+        }
 
-            <div style={{ padding: '16px', background: '#f8faf9', borderRadius: '14px', border: '1px solid var(--border)', textAlign: 'center', margin: '14px 0' }}>
-              <span style={{ fontSize: '0.8rem', color: '#688a77', textTransform: 'uppercase', fontWeight: 700 }}>
-                {selectedPayment.merchant}
-              </span>
-              <div style={{ fontSize: '2rem', fontWeight: 800, color: '#1b4332', margin: '4px 0' }}>
-                {formatCurrency(selectedPayment.average_amount)}
-              </div>
-              <p style={{ fontSize: '0.8rem', color: '#476856', margin: 0 }}>
-                Next due: {selectedPayment.next_expected_date || 'Immediate'}
-              </p>
-            </div>
-
-            <div style={{ marginBottom: '16px' }}>
-              <p style={{ fontSize: '0.85rem', color: '#476856', marginBottom: '10px' }}>
-                Choose your preferred payment method:
-              </p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <a
-                  href={`upi://pay?pa=bills@upi&pn=${encodeURIComponent(selectedPayment.merchant)}&am=${selectedPayment.average_amount}&cu=INR`}
-                  className="btn-primary"
-                  style={{ width: '100%', textDecoration: 'none', justifyContent: 'center' }}
-                  onClick={() => {
-                    setTimeout(() => handleOpenMarkPaid(selectedPayment), 1200);
-                  }}
-                >
-                  <Zap size={16} /> Open UPI App (GPay / PhonePe / Paytm)
-                </a>
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => handleOpenMarkPaid(selectedPayment)}
-                  style={{ width: '100%' }}
-                >
-                  <Check size={16} /> Already Paid? Record Payment
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(13, 38, 28, 0.45)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1200, padding: '1rem' }}>
+            <div style={{ background: '#ffffff', border: '1px solid rgba(82, 183, 136, 0.35)', borderRadius: '20px', width: '100%', maxWidth: '440px', maxHeight: '90vh', overflowY: 'auto', padding: '24px', boxShadow: '0 20px 50px rgba(13, 38, 28, 0.15)' }}>
+              
+              {/* Modal Header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#d8f3dc', color: '#1b4332', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <ExternalLink size={18} />
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#132e22' }}>
+                      Pay via UPI
+                    </h3>
+                    <p style={{ margin: 0, fontSize: '0.78rem', color: '#688a77' }}>Direct settlement for verified bill</p>
+                  </div>
+                </div>
+                <button onClick={() => setActiveModal(null)} style={{ background: 'transparent', border: 'none', color: '#688a77', cursor: 'pointer' }}>
+                  <X size={20} />
                 </button>
               </div>
-            </div>
 
-            <div style={{ textAlign: 'center', borderTop: '1px solid rgba(82, 183, 136, 0.15)', paddingTop: '10px' }}>
-              <button type="button" onClick={() => setActiveModal(null)} className="btn-ghost" style={{ fontSize: '0.8rem' }}>
-                Dismiss
-              </button>
+              {/* Bill Summary Card */}
+              <div style={{ padding: '16px', background: '#f8faf9', borderRadius: '14px', border: '1px solid var(--border)', textAlign: 'center', margin: '14px 0' }}>
+                <span style={{ fontSize: '0.8rem', color: '#688a77', textTransform: 'uppercase', fontWeight: 700 }}>
+                  {selectedPayment.merchant}
+                </span>
+                <div style={{ fontSize: '2rem', fontWeight: 800, color: '#1b4332', margin: '4px 0' }}>
+                  {formatCurrency(selectedPayment.average_amount)}
+                </div>
+                <p style={{ fontSize: '0.8rem', color: '#476856', margin: 0 }}>
+                  Next due: {selectedPayment.next_expected_date || 'Immediate'}
+                </p>
+              </div>
+
+              {/* Error Alert Box */}
+              {upiError && (
+                <div style={{ padding: '10px 14px', background: '#fef2f2', borderRadius: '12px', border: '1px solid #fecaca', color: '#b91c1c', fontSize: '0.8rem', marginBottom: '12px', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                  <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: '2px' }} />
+                  <span>{upiError}</span>
+                </div>
+              )}
+
+              {/* Payee UPI Configuration section */}
+              {!hasUpiConfig && !isEditingUpi ? (
+                <div style={{ padding: '12px 14px', background: '#fffbeb', borderRadius: '12px', border: '1px solid #fde68a', margin: '12px 0' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#92400e', fontWeight: 700, fontSize: '0.82rem' }}>
+                    <AlertTriangle size={15} />
+                    <span>UPI payment details are not configured for this bill.</span>
+                  </div>
+                  <p style={{ margin: '6px 0 10px 0', fontSize: '0.78rem', color: '#78350f' }}>
+                    Configure the payee UPI VPA to enable one-tap mobile app redirection.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingUpi(true)}
+                    className="btn-secondary"
+                    style={{ width: '100%', fontSize: '0.8rem', padding: '6px 10px', justifyContent: 'center' }}
+                  >
+                    <Edit2 size={14} /> Configure Payee UPI ID
+                  </button>
+                </div>
+              ) : isEditingUpi ? (
+                <div style={{ padding: '12px 14px', background: '#f4faf6', borderRadius: '12px', border: '1px solid rgba(82, 183, 136, 0.4)', margin: '12px 0' }}>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#1b4332', marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span>Configure Payee UPI Details</span>
+                    {hasUpiConfig && (
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingUpi(false)}
+                        style={{ background: 'none', border: 'none', color: '#688a77', cursor: 'pointer', fontSize: '0.75rem' }}
+                      >
+                        Cancel
+                      </button>
+                    )}
+                  </div>
+                  <form onSubmit={handleSaveUpiConfig} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div>
+                      <label style={{ fontSize: '0.72rem', fontWeight: 700, color: '#476856', display: 'block', marginBottom: '3px' }}>
+                        Payee UPI ID (VPA) *
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. merchant@upi, biller@bank"
+                        value={upiEditForm.payee_upi_id}
+                        onChange={(e) => setUpiEditForm(prev => ({ ...prev, payee_upi_id: e.target.value }))}
+                        className="form-input"
+                        style={{ width: '100%', fontSize: '0.82rem', padding: '6px 10px', borderRadius: '8px', border: '1px solid #b7e4c7' }}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '0.72rem', fontWeight: 700, color: '#476856', display: 'block', marginBottom: '3px' }}>
+                        Payee Official Name
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Electricity Board / Netflix"
+                        value={upiEditForm.payee_name}
+                        onChange={(e) => setUpiEditForm(prev => ({ ...prev, payee_name: e.target.value }))}
+                        className="form-input"
+                        style={{ width: '100%', fontSize: '0.82rem', padding: '6px 10px', borderRadius: '8px', border: '1px solid #b7e4c7' }}
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={savingUpiConfig}
+                      className="btn-primary"
+                      style={{ fontSize: '0.8rem', padding: '7px 12px', justifyContent: 'center', marginTop: '4px' }}
+                    >
+                      {savingUpiConfig ? 'Saving...' : 'Save & Enable UPI'}
+                    </button>
+                  </form>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.78rem', color: '#476856', margin: '10px 0', background: '#f4faf6', padding: '8px 12px', borderRadius: '10px', border: '1px solid rgba(82, 183, 136, 0.25)' }}>
+                  <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <span style={{ color: '#688a77' }}>Payee: </span>
+                    <strong style={{ color: '#1b4332' }}>{selectedPayment.payee_upi_id}</strong>
+                    {selectedPayment.payee_name && (
+                      <span style={{ color: '#2d6a4f', marginLeft: '4px' }}>({selectedPayment.payee_name})</span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyUpiId(selectedPayment.payee_upi_id)}
+                      title="Copy UPI ID"
+                      style={{ background: 'none', border: 'none', color: copiedUpi ? '#2d6a4f' : '#688a77', cursor: 'pointer', padding: '2px' }}
+                    >
+                      {copiedUpi ? <Check size={14} /> : <Copy size={14} />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingUpi(true)}
+                      title="Edit Payee Details"
+                      style={{ background: 'none', border: 'none', color: '#2d6a4f', cursor: 'pointer', padding: '2px' }}
+                    >
+                      <Edit2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Initiated status banner if launched on mobile */}
+              {upiStatus === 'initiated' && (
+                <div style={{ padding: '12px 14px', background: '#eaf5ee', borderRadius: '12px', border: '1px solid #52b788', margin: '12px 0', fontSize: '0.8rem', color: '#1b4332' }}>
+                  <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                    <Clock size={16} color="#2d6a4f" /> UPI Application Launched
+                  </div>
+                  <p style={{ margin: 0, fontSize: '0.77rem', color: '#2d6a4f' }}>
+                    Complete the payment in your chosen UPI app (GPay / PhonePe / Paytm). Once done, tap <strong>"Already Paid? Record Payment"</strong> below to confirm.
+                  </p>
+                </div>
+              )}
+
+              {/* Desktop Notice & QR code helper */}
+              {(!isMobile || upiStatus === 'desktop_notice') && (
+                <div style={{ padding: '12px 14px', background: '#f0fdf4', borderRadius: '12px', border: '1px solid rgba(82, 183, 136, 0.4)', margin: '12px 0', textAlign: 'left' }}>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '0.78rem', color: '#1b4332', fontWeight: 600 }}>
+                    UPI payments are available on supported mobile devices. Please open Expense Buddy on your Android phone to continue.
+                  </p>
+                  {hasUpiConfig && dynamicUpiUri && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed rgba(82, 183, 136, 0.3)' }}>
+                      <img
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&margin=0&data=${encodeURIComponent(dynamicUpiUri)}`}
+                        alt="UPI Payment QR"
+                        style={{ width: '90px', height: '90px', borderRadius: '8px', border: '1px solid #b7e4c7', background: '#fff', padding: '3px' }}
+                      />
+                      <div style={{ fontSize: '0.74rem', color: '#476856' }}>
+                        <span style={{ fontWeight: 700, color: '#132e22', display: 'block', marginBottom: '3px' }}>
+                          Scan to pay via mobile app:
+                        </span>
+                        <span>Compatible with any UPI app scanner (GPay, PhonePe, Paytm, BHIM).</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Modal Action Buttons */}
+              <div style={{ marginBottom: '16px', marginTop: '12px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    style={{ width: '100%', justifyContent: 'center', opacity: !hasUpiConfig ? 0.75 : 1 }}
+                    onClick={handleLaunchUpiApp}
+                  >
+                    <Zap size={16} /> Open UPI App (GPay / PhonePe / Paytm)
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => handleOpenMarkPaid(selectedPayment)}
+                    style={{ width: '100%', justifyContent: 'center' }}
+                  >
+                    <Check size={16} /> Already Paid? Record Payment
+                  </button>
+                </div>
+              </div>
+
+              {/* Modal Footer Dismiss */}
+              <div style={{ textAlign: 'center', borderTop: '1px solid rgba(82, 183, 136, 0.15)', paddingTop: '10px' }}>
+                <button type="button" onClick={() => setActiveModal(null)} className="btn-ghost" style={{ fontSize: '0.8rem' }}>
+                  Dismiss
+                </button>
+              </div>
+
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── Modal: Mark As Paid ── */}
       {activeModal === 'mark_paid' && selectedPayment && (

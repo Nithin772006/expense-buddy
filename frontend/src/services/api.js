@@ -99,6 +99,16 @@ export const markRecurringPaymentPaid = async (paymentId, payload) => {
   return res;
 };
 
+export const updateRecurringUpiConfig = async (paymentId, payload) => {
+  const res = await api.patch(`/recurring-payments/${paymentId}/upi-config`, payload);
+  invalidateRecurringPayments();
+  return res;
+};
+
+export const getRecurringUpiIntent = async (paymentId) => {
+  return api.get(`/recurring-payments/${paymentId}/upi-intent`);
+};
+
 export default api;
 
 

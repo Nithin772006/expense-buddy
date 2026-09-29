@@ -275,6 +275,13 @@ def get_stored_recurring_payments(user_id: str, token: Optional[str] = None) -> 
         rec_copy["current_cycle_status"] = current_status
         rec_copy["current_cycle_key"] = cycle_key
         rec_copy["is_paid"] = is_paid
+
+        # Payee UPI configuration
+        evidence = rec.get("detection_evidence") or {}
+        rec_copy["payee_upi_id"] = rec.get("payee_upi_id") or evidence.get("payee_upi_id")
+        rec_copy["payee_name"] = rec.get("payee_name") or evidence.get("payee_name") or rec.get("merchant")
+        rec_copy["currency"] = "INR"
+
         if instance:
             rec_copy["paid_date"] = instance.get("paid_date")
             rec_copy["actual_amount"] = instance.get("actual_amount")
@@ -588,4 +595,68 @@ def manual_mark_paid(
         "message": f"Marked {rec.get('merchant')} as PAID for cycle {cycle_key}.",
         "cycle_key": cycle_key,
         "next_expected_date": next_expected.isoformat(),
+    }
+
+
+def update_payment_upi_config(
+    user_id: str,
+    payment_id: str,
+    payee_upi_id: str,
+    payee_name: Optional[str],
+    token: str,
+) -> dict:
+    """
+    Update Payee UPI ID and Name for a recurring commitment.
+    Validates VPA format and user isolation.
+    """
+    from services.upi_service import validate_upi_id
+
+    if not validate_upi_id(payee_upi_id):
+        raise ValueError(f"Invalid UPI ID format: {repr(payee_upi_id)}. Expected format: name@bankhandle")
+
+    client = get_supabase_client(token)
+
+    # 1. Fetch current record to verify ownership
+    rec_resp = (
+        client
+        .from_("recurring_payments")
+        .select("*")
+        .eq("id", payment_id)
+        .eq("user_id", user_id)
+        .single()
+        .execute()
+    )
+    rec = rec_resp.data
+    if not rec:
+        raise ValueError("Recurring payment record not found or access denied.")
+
+    clean_payee_name = str(payee_name or rec.get("merchant") or "Payee").strip()
+    clean_upi_id = payee_upi_id.strip()
+
+    # 2. Update detection_evidence (guaranteed JSONB column in Supabase)
+    evidence = rec.get("detection_evidence") or {}
+    evidence["payee_upi_id"] = clean_upi_id
+    evidence["payee_name"] = clean_payee_name
+
+    update_payload = {
+        "detection_evidence": evidence,
+        "updated_at": datetime.utcnow().isoformat(),
+    }
+
+    # Also try updating direct columns if present in schema
+    try:
+        direct_payload = dict(update_payload)
+        direct_payload["payee_upi_id"] = clean_upi_id
+        direct_payload["payee_name"] = clean_payee_name
+        client.from_("recurring_payments").update(direct_payload).eq("id", payment_id).execute()
+    except Exception:
+        # Fallback to evidence-only update if columns not yet added to remote table
+        client.from_("recurring_payments").update(update_payload).eq("id", payment_id).execute()
+
+    return {
+        "success": True,
+        "message": f"Updated UPI configuration for {rec.get('merchant')}.",
+        "payment_id": payment_id,
+        "payee_upi_id": clean_upi_id,
+        "payee_name": clean_payee_name,
     }

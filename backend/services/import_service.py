@@ -24,6 +24,21 @@ from services import classification_service, anomaly_service
 from services.supabase_client import get_supabase_client
 
 
+# Columns that exist in the Supabase transactions table.
+# Any key NOT in this set is stripped before insert to prevent DB errors.
+# Update this set when running migration 003_add_debit_credit_reference.sql
+_DB_COLUMNS = {
+    "user_id", "source_import_id",
+    "transaction_date", "description", "raw_description",
+    "merchant", "amount", "transaction_type",
+    "payment_method", "account_balance", "source",
+    "category", "is_anomaly", "anomaly_score",
+    "classification_confidence",
+    # Added by migration 003:
+    "debit", "credit", "reference",
+}
+
+
 # ── Parse stage (returns preview data without saving) ──────────────────────
 
 def parse_file(file_bytes: bytes, filename: str, file_type: str, password: Optional[str] = None) -> dict:
@@ -52,6 +67,12 @@ def parse_file(file_bytes: bytes, filename: str, file_type: str, password: Optio
     rows = parsed["rows"]
     auto_mapping = detect_column_mapping(columns)
 
+    # Incorporate any detected columns from table detector
+    if "detected_columns" in parsed:
+        for k, col in parsed["detected_columns"].items():
+            if col and not auto_mapping.get(k):
+                auto_mapping[k] = col
+
     # Check if critical fields were detected
     has_date   = auto_mapping.get("date") is not None
     has_amount = (
@@ -60,7 +81,11 @@ def parse_file(file_bytes: bytes, filename: str, file_type: str, password: Optio
         or auto_mapping.get("credit") is not None
     )
     has_desc = auto_mapping.get("description") is not None
-    mapping_confident = has_date and has_amount and has_desc
+    table_detected = parsed.get("table_detected", True)
+    confidence = parsed.get("confidence", 1.0 if (has_date and has_amount and has_desc) else 0.5)
+    mapping_confident = has_date and has_amount and has_desc and table_detected and (confidence >= 0.70)
+
+    header_row = parsed.get("header_row", 1)
 
     return {
         "columns": columns,
@@ -77,6 +102,20 @@ def parse_file(file_bytes: bytes, filename: str, file_type: str, password: Optio
         # Include extra info for Excel multi-sheet
         "sheet_names": parsed.get("sheet_names"),
         "selected_sheet": parsed.get("selected_sheet"),
+        # Table detection & confidence metadata (requirements 20 & 30)
+        "sheet": parsed.get("selected_sheet"),
+        "header_row": header_row,
+        "confidence": confidence,
+        "detected_table": {
+            "sheet": parsed.get("selected_sheet"),
+            "header_row": header_row,
+            "confidence": confidence,
+            "columns": auto_mapping,
+            "transaction_count": parsed["total_rows"],
+        },
+        "transaction_count": parsed["total_rows"],
+        "detection_message": parsed.get("message"),
+        "table_detected": table_detected,
     }
 
 
@@ -87,6 +126,11 @@ def parse_file_with_sheet(
     parsed = parse_excel(file_bytes, filename, sheet_name)
     columns = parsed["columns"]
     auto_mapping = detect_column_mapping(columns)
+    if "detected_columns" in parsed:
+        for k, col in parsed["detected_columns"].items():
+            if col and not auto_mapping.get(k):
+                auto_mapping[k] = col
+
     has_date   = auto_mapping.get("date") is not None
     has_amount = (
         auto_mapping.get("amount") is not None
@@ -94,7 +138,10 @@ def parse_file_with_sheet(
         or auto_mapping.get("credit") is not None
     )
     has_desc = auto_mapping.get("description") is not None
-    mapping_confident = has_date and has_amount and has_desc
+    table_detected = parsed.get("table_detected", True)
+    confidence = parsed.get("confidence", 1.0 if (has_date and has_amount and has_desc) else 0.5)
+    mapping_confident = has_date and has_amount and has_desc and table_detected and (confidence >= 0.70)
+    header_row = parsed.get("header_row", 1)
 
     return {
         "columns": columns,
@@ -105,6 +152,19 @@ def parse_file_with_sheet(
         "source": "excel",
         "sheet_names": parsed.get("sheet_names"),
         "selected_sheet": parsed.get("selected_sheet"),
+        "sheet": parsed.get("selected_sheet"),
+        "header_row": header_row,
+        "confidence": confidence,
+        "detected_table": {
+            "sheet": parsed.get("selected_sheet"),
+            "header_row": header_row,
+            "confidence": confidence,
+            "columns": auto_mapping,
+            "transaction_count": parsed["total_rows"],
+        },
+        "transaction_count": parsed["total_rows"],
+        "detection_message": parsed.get("message"),
+        "table_detected": table_detected,
     }
 
 
@@ -113,15 +173,21 @@ def parse_file_with_sheet(
 def normalize_rows(rows: list[dict], mapping: dict, source: str) -> tuple[list, list]:
     """
     Attempt to normalize every row.
+    Passes running prev_balance for balance-validation.
     Returns (valid_rows, error_rows).
-    valid_rows: list of normalized dicts
+    valid_rows: list of normalized dicts (internal _balance_valid flag stripped)
     error_rows: list of {row_index, raw_row, error}
     """
     valid = []
     errors = []
+    prev_balance = None
     for idx, row in enumerate(rows):
         try:
-            normalized = normalize_row(row, mapping, source)
+            normalized = normalize_row(row, mapping, source, prev_balance=prev_balance)
+            # Advance running balance for next row
+            prev_balance = normalized.get("account_balance")
+            # Strip internal flag before returning to callers
+            normalized.pop("_balance_valid", None)
             valid.append(normalized)
         except ValueError as e:
             errors.append({
@@ -245,9 +311,14 @@ def confirm_import(
     BATCH_SIZE = 100
     for i in range(0, len(to_insert), BATCH_SIZE):
         batch = to_insert[i : i + BATCH_SIZE]
+        # Strip any internal/unknown keys to avoid DB column errors
+        safe_batch = [
+            {k: v for k, v in row.items() if k in _DB_COLUMNS}
+            for row in batch
+        ]
         try:
-            client.from_("transactions").insert(batch).execute()
-            inserted_count += len(batch)
+            client.from_("transactions").insert(safe_batch).execute()
+            inserted_count += len(safe_batch)
         except Exception as e:
             batch_errors.append({
                 "error": f"Database insert failed for batch {i//BATCH_SIZE}: {str(e)}",

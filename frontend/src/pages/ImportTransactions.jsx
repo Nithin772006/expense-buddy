@@ -133,7 +133,10 @@ export default function ImportTransactions() {
         setOcrWarning(result.ocr_warning_message);
       }
 
-      if (result.mapping_confident) {
+      // PDF statements with confident mapping proceed directly to PREVIEW.
+      // Excel and CSV statements go to MAPPING so users see the auto-detected
+      // table summary, header row, count, and click 'Confirm Mapping & Preview'.
+      if (result.source === 'pdf' && result.mapping_confident) {
         setStage(STAGE.PREVIEW);
       } else {
         setStage(STAGE.MAPPING);
@@ -195,11 +198,7 @@ export default function ImportTransactions() {
       setParseResult(result);
       setMapping(result.auto_mapping);
       setSelectedSheet(sheetName);
-      if (result.mapping_confident) {
-        setStage(STAGE.PREVIEW);
-      } else {
-        setStage(STAGE.MAPPING);
-      }
+      setStage(STAGE.MAPPING);
     } catch (err) {
       setParseError(extractErrorMessage(err, 'Failed to parse sheet.'));
     } finally {
@@ -449,8 +448,15 @@ export default function ImportTransactions() {
               )}
               <ColumnMapper
                 columns={parseResult.columns}
-                initialMapping={parseResult.auto_mapping}
+                initialMapping={mapping || parseResult.auto_mapping}
                 onConfirm={handleMappingConfirm}
+                detectedTable={parseResult.detected_table}
+                source={parseResult.source}
+                headerRow={parseResult.header_row}
+                confidence={parseResult.confidence}
+                totalRows={parseResult.total_rows}
+                selectedSheet={selectedSheet || parseResult.selected_sheet}
+                detectionMessage={parseResult.detection_message}
               />
               <button className="btn-ghost btn-sm import-back-btn" onClick={handleReset}>
                 ← Change File
@@ -467,6 +473,7 @@ export default function ImportTransactions() {
                 totalRows={parseResult.total_rows}
                 onConfirm={handleImportConfirm}
                 onCancel={handleReset}
+                onBackToMapping={() => setStage(STAGE.MAPPING)}
                 confirming={confirming}
                 ocrUsed={parseResult.ocr_used}
                 ocrWarning={ocrWarning}
